@@ -13,7 +13,7 @@ npx rollup -c rollup.config.types.js
 # sed -i.bak 's/declare/export/g' lib/index.d.ts
 
 # # Prepend declare module line
-# sed -i.bak '2s;^;declare module "@cubist-collective/sol-cerberus-js" {\n;' lib/index.d.ts
+# sed -i.bak '2s;^;declare module "sol-cerberus-js" {\n;' lib/index.d.ts
 
 # Remove backup file from `sed` above
 # rm lib/index.d.ts.bak
