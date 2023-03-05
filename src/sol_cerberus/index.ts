@@ -79,7 +79,7 @@ export const DEFAULT_CACHED_PERMS: CachedPermsType = {
   perms: {},
 };
 
-export class SolCerberusClient {
+export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
   /** @internal */ #appId: PublicKey;
   /** @internal */ #appPda: PublicKey | null = null;
