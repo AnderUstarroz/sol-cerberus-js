@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Coverage
+coverage
+.nyc_output
+
+# Release
+lib
+
+# Generated docs
+doc
+
+# TypeScript
+declarations
+
+# IDE & OS specific
+.DS_Store
+.idea
+.vscode

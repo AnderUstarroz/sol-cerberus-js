@@ -1,0 +1,81 @@
+{
+  "name": "sol-cerberus-js",
+  "version": "0.0.1",
+  "description": "Javascript SDK to interact with Sol Cerberus",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.cjs.js",
+  "module": "lib/index.esm.js",
+  "types": "lib/index.d.ts",
+  "browser": {
+    "./lib/index.cjs.js": "./lib/index.browser.cjs.js",
+    "./lib/index.esm.js": "./lib/index.browser.esm.js",
+    "./lib/idl.json": "./lib/idl.json"
+  },
+  "files": [
+    "/lib",
+    "/src"
+  ],
+  "scripts": {
+    "build": "npm run clean; cross-env NODE_ENV=production rollup -c; npm run type:gen",
+    "dev": "cross-env NODE_ENV=development rollup -c",
+    "clean": "rimraf ./coverage ./lib",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "type:gen": "./scripts/typegen.sh",
+    "lint": "set -ex; npm run pretty; eslint . --ext .js,.ts",
+    "lint:fix": "npm run pretty:fix && eslint . --fix --ext .js,.ts",
+    "type:check": "tsc -p tsconfig.json --noEmit",
+    "ok": "run-s lint test doc type:check",
+    "pretty": "prettier --check '{,{src,test}/**/}*.{j,t}s'",
+    "pretty:fix": "prettier --write '{,{src,test}/**/}*.{j,t}s'",
+    "re": "semantic-release --repository-url git@github.com:AnderUstarroz/sol-cerberus-js.git"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnderUstarroz/sol-cerberus-js.git"
+  },
+  "keywords": [],
+  "author": "Ander Ustarroz",
+  "bugs": {
+    "url": "https://github.com/AnderUstarroz/sol-cerberus-js/issues"
+  },
+  "homepage": "https://github.com/AnderUstarroz/sol-cerberus-js#readme",
+  "dependencies": {
+    "@project-serum/anchor": "^0.26.0",
+    "@solana/spl-token": "^0.3.7",
+    "big-number": "^2.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.19.0",
+    "@babel/plugin-proposal-class-properties": "^7.18.6",
+    "@babel/plugin-transform-runtime": "^7.18.10",
+    "@babel/preset-env": "^7.19.0",
+    "@babel/preset-typescript": "^7.18.6",
+    "@babel/register": "^7.18.9",
+    "@rollup/plugin-alias": "^3.1.9",
+    "@rollup/plugin-babel": "^5.3.1",
+    "@rollup/plugin-commonjs": "^22.0.2",
+    "@rollup/plugin-json": "^4.1.0",
+    "@rollup/plugin-multi-entry": "^4.1.0",
+    "@rollup/plugin-node-resolve": "^14.1.0",
+    "@rollup/plugin-replace": "^4.0.0",
+    "cross-env": "^7.0.3",
+    "eslint": "^8.24",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-import": "^2.26.0",
+    "eslint-plugin-mocha": "^10.1.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "esm": "^3.2.25",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^2.7.1",
+    "rollup": "^2.79.1",
+    "rollup-plugin-copy": "^3.4.0",
+    "rollup-plugin-dts": "^4.2.2",
+    "rollup-plugin-node-polyfills": "^0.2.1",
+    "rollup-plugin-terser": "^7.0.2",
+    "semantic-release": "^19.0.5",
+    "typescript": "^4.8.4"
+  }
+}

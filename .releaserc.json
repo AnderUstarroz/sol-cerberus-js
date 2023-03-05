@@ -1,0 +1,7 @@
+{
+  "repositoryUrl": "git@github.com:AnderUstarroz/sol-cerberus-js.git",
+  "preset": "conventionalcommits",
+  "presetConfig": {
+    "issueUrlFormat": "{{host}}/{{owner}}/sol-cerberus-js/issues/{{id}}"
+  }
+}
