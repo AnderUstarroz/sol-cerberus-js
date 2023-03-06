@@ -747,6 +747,38 @@
       }
     }
   ],
+  "events": [
+    {
+      "name": "RolesChanged",
+      "fields": [
+        {
+          "name": "time",
+          "type": "i64",
+          "index": false
+        },
+        {
+          "name": "appId",
+          "type": "publicKey",
+          "index": true
+        }
+      ]
+    },
+    {
+      "name": "RulesChanged",
+      "fields": [
+        {
+          "name": "time",
+          "type": "i64",
+          "index": false
+        },
+        {
+          "name": "appId",
+          "type": "publicKey",
+          "index": true
+        }
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -788,5 +820,8 @@
       "name": "SolCerberusAppIdMissing",
       "msg": "SOL_CERBERUS_APP_ID is missing on lib.rs"
     }
-  ]
+  ],
+  "metadata": {
+    "address": "SCERbrcgSPwgkrJ7j4TABr17dhYzdgiwPZUSSfFPt8x"
+  }
 }

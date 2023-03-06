@@ -53,6 +53,10 @@ export interface RolesByAddressType {
   [address: string]: AssignedRolesType;
 }
 
+export interface AddressFilterType {
+  [address: string]: PublicKey | null;
+}
+
 export interface AssignedAddressType {
   [address: string]: AssignedRoleObjectType;
 }
@@ -69,15 +73,15 @@ export interface AccountsType {
   solCerberusMetadata: PublicKey | null;
   solCerberus: PublicKey;
 }
-
+export interface ConfigType {
+  rulesChangedCallback?: Function;
+  rolesChangedCallback?: Function;
+}
 export const new_sc_app = (): PublicKey => web3.Keypair.generate().publicKey;
 
-export const DEFAULT_CACHED_PERMS: CachedPermsType = {
-  cachedAt: 0,
-  latestCreatedAt: 0,
-  size: 0,
-  perms: {},
-};
+export function default_cached_perms(): CachedPermsType {
+  return {cachedAt: 0, latestCreatedAt: 0, size: 0, perms: {}};
+}
 
 export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
@@ -86,16 +90,22 @@ export class SolCerberus {
   /** @internal */ #appData:
     | anchor.IdlAccounts<SolCerberusTypes>['app']
     | null = null;
-  /** @internal */ #permissions: CachedPermsType = DEFAULT_CACHED_PERMS;
+  /** @internal */ #permissions: CachedPermsType = default_cached_perms();
   /** @internal */ #wallet: PublicKey;
+  /** @internal */ #rulesListener: number | null = null;
+  /** @internal */ #rolesListener: number | null = null;
 
   /**
    * Creates Sol Cerberus client
    *
-   * @param #_program The Public key of the Sol Cerberus APP
-   * @param #_appId Anchor program
+   * @param #appId The Public key of the Sol Cerberus APP ID
+   * @param #provider Connection provider
    */
-  constructor(appId: PublicKey, provider: anchor.Provider) {
+  constructor(
+    appId: PublicKey,
+    provider: anchor.Provider,
+    config: ConfigType = {},
+  ) {
     this.#appId = appId;
     this.#program = new anchor.Program(
       SolCerberusIDL as any,
@@ -103,8 +113,39 @@ export class SolCerberus {
       provider,
     );
     this.#wallet = provider.publicKey as PublicKey;
+    this.#rulesListener = this.listenRulesEvents(config);
+    this.#rolesListener = this.listenRolesEvents(config);
     this.fetchAppData();
-    this.refreshPerms();
+  }
+
+  /**
+   * Subscribes to Sol Cerberus Rules updates to refresh permissions
+   */
+  listenRulesEvents(config: ConfigType) {
+    return config.rulesChangedCallback
+      ? this.#program.addEventListener('RulesChanged', async (event, slot) => {
+          if (event.appId.toBase58() === this.appId.toBase58()) {
+            //@ts-ignore
+            config.rulesChangedCallback(event, slot);
+          }
+        })
+      : null;
+  }
+
+  /**
+   * Subscribes to Sol Cerberus Role assignation updates (only when a callback is defined)
+   */
+  listenRolesEvents(config: ConfigType) {
+    return config.rolesChangedCallback
+      ? this.#program.addEventListener('RolesChanged', async (event, slot) => {
+          if (config.hasOwnProperty('rolesChangedCallback')) {
+            if (event.appId.toBase58() === this.appId.toBase58()) {
+              //@ts-ignore
+              config.rolesChangedCallback(event, slot);
+            }
+          }
+        })
+      : null;
   }
 
   async fetchAppPda(): Promise<PublicKey> {
@@ -132,6 +173,10 @@ export class SolCerberus {
     return this.#wallet;
   }
 
+  set wallet(address: PublicKey) {
+    this.#wallet = address;
+  }
+
   async getAppPda(): Promise<PublicKey> {
     return this.#appPda ? this.#appPda : await this.fetchAppPda();
   }
@@ -153,15 +198,15 @@ export class SolCerberus {
     ];
   }
 
+  /**
+   * Returns True if the rule is positive for at least one of the provided roles.
+   */
   hasPerm(
     roles: AddressByRoleType,
     resource: string,
     permission: string,
     namespace: number = namespaces.Default,
   ) {
-    /**
-     * Returns True if the rule is positive for at least one of the provided roles.
-     */
     // Authority has Full access:
     if (
       this.#appData &&
@@ -187,10 +232,10 @@ export class SolCerberus {
     return false;
   }
 
+  /**
+   * Returns the first valid (not expired) assigned address
+   */
   validAssignedAddress(addresses: AssignedAddressType): string | null {
-    /**
-     * Returns the first valid assigned address (not expired)
-     */
     for (const address in addresses) {
       if (
         !addresses[address].expiresAt ||
@@ -202,15 +247,15 @@ export class SolCerberus {
     return null;
   }
 
+  /**
+   * Finds the first Rule definition matching the provided Role, Resource, Permission and namespace.
+   */
   findRule(
     roles: AddressByRoleType,
     resource: string,
     permission: string,
     namespace: number = namespaces.Default,
   ): [string, string, string, number] | null {
-    /**
-     * Finds the first Rule definition matching the provided Role, Resource, Permission and namespace.
-     */
     for (const role in roles) {
       // Verify assigned role is not expired
       if (this.validAssignedAddress(roles[role])) {
@@ -245,10 +290,13 @@ export class SolCerberus {
     return Object.keys(addressType)[0] as AddressType;
   }
 
-  async assignedRoles(addresses: PublicKey[]): Promise<AddressByRoleType> {
-    /**
-     * Fetches the roles assigned to the provided addresses
-     */
+  /**
+   * Fetches the roles assigned to the provided addresses
+   */
+  async assignedRoles(
+    addresses: PublicKey[],
+    collectionsMints: AddressFilterType | null = null,
+  ): Promise<AddressByRoleType> {
     return (await this.filterAssignedRoles(addresses)).reduce(
       (output, x: RolesByAddressType) => {
         Object.entries(x).map(([address, roles]) => {
@@ -257,6 +305,14 @@ export class SolCerberus {
               output[role] = {};
             }
             output[role][address] = values;
+            if (values.addressType === 'collection') {
+              if (!collectionsMints || !collectionsMints[address]) {
+                throw new Error(
+                  `Collection ${address} requires his corresponding Mint address`,
+                );
+              }
+              output[role][address].nftMint = collectionsMints[address];
+            }
           });
         });
         return output;
@@ -265,15 +321,16 @@ export class SolCerberus {
     );
   }
 
+  /**
+   * Fetches the roles assigned to the provided addresses
+   * @param accountsFilters Program accounts filters: https://solanacookbook.com/guides/get-program-accounts.html#deep-dive
+   */
   async filterAssignedRoles(
-    addresses: PublicKey[],
+    accountsFilters: PublicKey[],
   ): Promise<RolesByAddressType[]> {
-    /**
-     * Fetches the roles assigned to the provided addresses
-     */
     return (
       await Promise.allSettled(
-        addresses.map((address: PublicKey) =>
+        accountsFilters.map((address: PublicKey) =>
           this.fetchAssignedRoles([
             //@ts-ignore
             {
@@ -290,10 +347,13 @@ export class SolCerberus {
       .map((r: any) => r.value);
   }
 
-  async fetchAssignedRoles(filters = []): Promise<RolesByAddressType> {
-    /**
-     * Fetches all assigned roles for the current program
-     */
+  /**
+   * Fetches all assigned roles for the current program
+   *
+   * @param accountsFilters Program accounts filters: https://solanacookbook.com/guides/get-program-accounts.html#deep-dive
+   *
+   */
+  async fetchAssignedRoles(accountsFilters = []): Promise<RolesByAddressType> {
     return (
       await this.#program.account.role.all([
         {
@@ -302,10 +362,11 @@ export class SolCerberus {
             bytes: this.#appId.toBase58(), // base58 encoded string
           },
         },
-        ...filters,
+        ...accountsFilters,
       ])
     ).reduce((assignedRoles, data) => {
-      assignedRoles[data.account.address.toBase58()] = {
+      let address = data.account.address.toBase58();
+      assignedRoles[address] = {
         [data.account.role]: {
           addressType: this.parseAddressType(data.account.addressType),
           createdAt: data.account.createdAt.toNumber() * 1000,
@@ -319,24 +380,24 @@ export class SolCerberus {
     }, {} as RolesByAddressType);
   }
 
+  /**
+   * Generates the required PDAs to perform the provided transaction:
+   *    - solCerberusApp: app PDA,
+   *    - solCerberusRule: rule PDA,
+   *    - solCerberusRole: role PDA,
+   *    - solCerberusTokenAcc: tokenAccount PDA,
+   *    - solCerberusMetadata: Metaplex PDA,
+   *    - solCerberus: Program PDA,
+   *
+   */
   async accounts(
     roles: AddressByRoleType,
     resource: string,
     permission: string,
     namespace: number = namespaces.Default,
   ): Promise<AccountsType> {
-    /**
-     * Generates the required PDAs to perform the provided transaction:
-     *    - solCerberusApp: app PDA,
-     *    - solCerberusRule: rule PDA,
-     *    - solCerberusRole: role PDA,
-     *    - solCerberusTokenAcc: tokenAccount PDA,
-     *    - solCerberusMetadata: Metaplex PDA,
-     *    - solCerberus: Program PDA,
-     *
-     */
     let defaultOutput = {
-      solCerberusApp: this.#appPda,
+      solCerberusApp: await this.getAppPda(),
       solCerberusRule: null,
       solCerberusRole: null,
       solCerberusTokenAcc: null,
@@ -367,6 +428,9 @@ export class SolCerberus {
     return defaultOutput;
   }
 
+  /**
+   * Fetches PDA accounts in parallel
+   */
   async fetchPdaAccounts(
     roles: AddressByRoleType,
     role: string,
@@ -376,9 +440,6 @@ export class SolCerberus {
     assignedAddress: string,
     defaultOutput: AccountsType,
   ): Promise<AccountsType> {
-    /**
-     * Fetches PDA accounts in parallel
-     */
     let asyncFuncs = [];
     // Rule PDA fetcher
     asyncFuncs.push(async () =>
@@ -412,13 +473,13 @@ export class SolCerberus {
     return defaultOutput;
   }
 
+  /**
+   * Adds NFT fetcher (only needed when using NFT authentication)
+   */
   async getTokenAccount(
     assignedRole: AssignedRoleObjectType,
     assignedAddress: string,
   ) {
-    /**
-     * Adds NFT fetcher (only needed when using NFT authentication)
-     */
     if (assignedRole.addressType === 'nft') {
       return getAssociatedTokenAddress(
         new PublicKey(assignedAddress),
@@ -435,20 +496,20 @@ export class SolCerberus {
     return null;
   }
 
+  /**
+   * Adds NFT fetcher (only needed when using NFT authentication)
+   */
   async getMetadataAccount(assignedRole: AssignedRoleObjectType) {
-    /**
-     * Adds NFT fetcher (only needed when using NFT authentication)
-     */
     if (assignedRole.addressType === 'collection') {
       return nft_metadata_pda(assignedRole.nftMint as PublicKey);
     }
     return null;
   }
 
-  async refreshPerms() {
-    /*
-     * Fetches Permissions from blockchain
-     */
+  /*
+   * Fetches Permissions from blockchain
+   */
+  async fetchPerms(fromCache: boolean = true) {
     let cached = this.cachedPerms();
     let fetched = await this.#program.account.rule.all([
       {
@@ -467,42 +528,45 @@ export class SolCerberus {
     );
     // Update cache only if Perms have been modified (different size or different creation date)
     if (
+      !fromCache ||
       cached.latestCreatedAt < latestCreatedAt ||
       cached.size !== fetched.length
     ) {
       cached = this.parsePerms(fetched);
-      this.cachePerms(cached);
+      cached.size = fetched.length;
+      cached.cachedAt = new Date().getTime();
+      this.setCachePerms(cached);
     }
     this.#permissions = cached;
+    return cached;
   }
 
+  /**
+   * Parse Permissions into following mapped format:
+   *
+   * {
+   *   cachedAt: 0,
+   *   latestCreatedAt: 0,
+   *   perms: {
+   *      0: {
+   *       role1:  {
+   *          resource1: {
+   *            permission1: {
+   *              createdAt: 1677485630000;
+   *             expiresAt: null;
+   *           },
+   *           resource2: {...}
+   *          },
+   *       },
+   *        role2:  {...}
+   *      },
+   *      1: {...}
+   *   },
+   * }
+   *
+   */
   parsePerms(fetchedPerms: any): CachedPermsType {
-    /**
-     * Parse Permissions into following mapped format:
-     *
-     * {
-     *   cachedAt: 0,
-     *   latestCreatedAt: 0,
-     *   perms: {
-     *      0: {
-     *       role1:  {
-     *          resource1: {
-     *            permission1: {
-     *              createdAt: 1677485630000;
-     *             expiresAt: null;
-     *           },
-     *           resource2: {...}
-     *          },
-     *       },
-     *        role2:  {...}
-     *      },
-     *      1: {...}
-     *   },
-     * }
-     *
-     */
-    if (!fetchedPerms) return DEFAULT_CACHED_PERMS;
-
+    if (!fetchedPerms) return default_cached_perms();
     return fetchedPerms.reduce((result: CachedPermsType, account: any) => {
       let data = account.account;
       if (!result.perms.hasOwnProperty(data.namespace)) {
@@ -522,34 +586,39 @@ export class SolCerberus {
           createdAt: created,
           expiresAt: data.expiresAt ? data.expiresAt.toNumber() * 1000 : null,
         };
-      result.size += 1;
       if (created > result.latestCreatedAt) {
         result.latestCreatedAt = created;
       }
       return result;
-    }, DEFAULT_CACHED_PERMS);
+    }, default_cached_perms());
   }
 
   cachePermsKey(): string {
     return `SolCerberus-Perms-${this.#appId.toBase58()}`;
   }
 
-  cachePerms(perms: CachedPermsType) {
-    /**
-     * Stores Perms in localStorage
-     */
-    perms.cachedAt = new Date().getTime();
-    localStorage.setItem(this.cachePermsKey(), JSON.stringify(perms));
+  /**
+   * Stores Perms in localStorage (When available)
+   */
+  setCachePerms(perms: CachedPermsType) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(this.cachePermsKey(), JSON.stringify(perms));
+    }
   }
 
+  /**
+   * Retrieves Perms from localStorage (When available)
+   */
   cachedPerms(): CachedPermsType {
-    /**
-     * Retrieves Perms from localStorage
-     */
-    let cached = JSON.parse(
-      localStorage.getItem(this.cachePermsKey()) as string,
-    );
-    return cached ? cached : DEFAULT_CACHED_PERMS;
+    if (typeof window !== 'undefined') {
+      let cached = JSON.parse(
+        localStorage.getItem(this.cachePermsKey()) as string,
+      );
+      if (cached) {
+        return cached;
+      }
+    }
+    return this.permissions ? this.permissions : default_cached_perms();
   }
 
   isUnauthorizedError(e: any) {
@@ -565,5 +634,17 @@ export class SolCerberus {
       e.error.hasOwnProperty('errorMessage') &&
       e.error.errorCode.hasOwnProperty('code')
     );
+  }
+
+  /**
+   * Cleanup resources;
+   */
+  destroy() {
+    if (this.#rulesListener !== null) {
+      this.program.removeEventListener(this.#rulesListener);
+    }
+    if (this.#rolesListener !== null) {
+      this.program.removeEventListener(this.#rolesListener);
+    }
   }
 }
