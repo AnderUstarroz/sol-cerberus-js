@@ -3,7 +3,7 @@
 
   <h1>Sol Cerberus</h1>
     <p>
-        <strong>Solana's watch dog</strong>
+        <strong>Solana's on-chain watch dog</strong>
     </p>
     <p>
         <a href="https://solcerberus.com/"><img alt="Website" src="https://img.shields.io/website?up_message=online&url=http%3A%2F%2Fsolcerberus.com%2F"></a>
@@ -19,3 +19,5 @@ Javascript SDK to interact with Sol Cerberus Role-Based Access Control (RBAC).
 
 
 - [Sol Cerberus website](https://solcerberus.com/)
+- [Docs](https://docs.solcerberus.com/)
+- [Demo](https://demo.solcerberus.com/)

@@ -1,7 +1,7 @@
 {
   "name": "sol-cerberus-js",
-  "version": "0.0.3",
-  "description": "Javascript SDK to interact with Sol Cerberus",
+  "version": "0.0.5",
+  "description": "Javascript SDK to interact with Solana's Sol Cerberus program",
   "license": "MIT",
   "publishConfig": {
     "access": "public"

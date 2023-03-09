@@ -83,6 +83,12 @@ export function default_cached_perms(): CachedPermsType {
   return {cachedAt: 0, latestCreatedAt: 0, size: 0, perms: {}};
 }
 
+export const addressType = {
+  Wallet: {wallet: {}},
+  NFT: {nFT: {}},
+  Collection: {collection: {}},
+};
+
 export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
   /** @internal */ #appId: PublicKey;
