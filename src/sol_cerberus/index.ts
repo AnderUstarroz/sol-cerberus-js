@@ -372,15 +372,16 @@ export class SolCerberus {
       ])
     ).reduce((assignedRoles, data) => {
       let address = data.account.address.toBase58();
-      assignedRoles[address] = {
-        [data.account.role]: {
-          addressType: this.parseAddressType(data.account.addressType),
-          createdAt: data.account.createdAt.toNumber() * 1000,
-          nftMint: null,
-          expiresAt: data.account.expiresAt
-            ? data.account.expiresAt.toNumber() * 1000
-            : null,
-        },
+      if (!assignedRoles.hasOwnProperty(address)) {
+        assignedRoles[address] = {};
+      }
+      assignedRoles[address][data.account.role] = {
+        addressType: this.parseAddressType(data.account.addressType),
+        createdAt: data.account.createdAt.toNumber() * 1000,
+        nftMint: null,
+        expiresAt: data.account.expiresAt
+          ? data.account.expiresAt.toNumber() * 1000 // Convert to milliseconds
+          : null,
       };
       return assignedRoles;
     }, {} as RolesByAddressType);

@@ -3,7 +3,7 @@
 
   <h1>Sol Cerberus</h1>
     <p>
-        <strong>Solana's on-chain watch dog</strong>
+        <strong>The new authority</strong>
     </p>
     <p>
         <a href="https://solcerberus.com/"><img alt="Website" src="https://img.shields.io/website?up_message=online&url=http%3A%2F%2Fsolcerberus.com%2F"></a>
