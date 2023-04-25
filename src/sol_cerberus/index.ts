@@ -83,9 +83,9 @@ export function default_cached_perms(): CachedPermsType {
   return {cachedAt: 0, latestCreatedAt: 0, size: 0, perms: {}};
 }
 
-export const addressType = {
+export const addressType: any = {
   Wallet: {wallet: {}},
-  NFT: {nFT: {}},
+  NFT: {nft: {}},
   Collection: {collection: {}},
 };
 
