@@ -25,6 +25,7 @@ To remove the link just run: `yarn unlink "sol-cerberus-js"`
 
 To publish the package:
 
+- Run `yarn build`
 - Run `yarn publish --access public`
 - Type the new package version.
 - Add the Google authentication code.

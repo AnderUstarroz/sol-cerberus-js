@@ -6,6 +6,12 @@ import {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
 import {SOL_CERBERUS_PROGRAM_ID} from '../constants';
 import SolCerberusIDL from '../idl/sol_cerberus.json';
 import {getAssociatedTokenAddress} from '@solana/spl-token';
+import {BN} from '@project-serum/anchor';
+
+// @TODO Remove this hack, only used to get the BN type included on package (used by app.updated_at).
+export const BIG_NUMBER: BN = 0;
+
+export type {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
 
 export enum namespaces {
   Default = 0,
@@ -130,9 +136,11 @@ export class SolCerberus {
   listenRulesEvents(config: ConfigType) {
     return config.rulesChangedCallback
       ? this.#program.addEventListener('RulesChanged', async (event, slot) => {
-          if (event.appId.toBase58() === this.appId.toBase58()) {
-            //@ts-ignore
-            config.rulesChangedCallback(event, slot);
+          if (config.hasOwnProperty('rulesChangedCallback')) {
+            if (event.appId.toBase58() === this.appId.toBase58()) {
+              //@ts-ignore
+              config.rulesChangedCallback(event, slot);
+            }
           }
         })
       : null;

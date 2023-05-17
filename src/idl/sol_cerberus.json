@@ -1,5 +1,5 @@
 {
-  "version": "0.1.5",
+  "version": "0.1.8",
   "name": "sol_cerberus",
   "instructions": [
     {
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "name": "updateAuthority",
+      "name": "updateApp",
       "accounts": [
         {
           "name": "signer",
@@ -82,10 +82,48 @@
       ],
       "args": [
         {
-          "name": "newAuthority",
-          "type": "publicKey"
+          "name": "appData",
+          "type": {
+            "defined": "UpdateAppData"
+          }
         }
       ]
+    },
+    {
+      "name": "deleteApp",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "app",
+          "isMut": true,
+          "isSigner": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "app"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "App",
+                "path": "app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collector",
+          "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
     },
     {
       "name": "addRule",
@@ -202,10 +240,7 @@
                 "path": "app.id"
               }
             ]
-          },
-          "relations": [
-            "authority"
-          ]
+          }
         },
         {
           "name": "rule",
@@ -355,10 +390,7 @@
                 "path": "app.id"
               }
             ]
-          },
-          "relations": [
-            "authority"
-          ]
+          }
         },
         {
           "name": "role",
@@ -390,6 +422,48 @@
         {
           "name": "collector",
           "isMut": true,
+          "isSigner": false
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "updateCache",
+      "docs": [
+        "* Updates the app.updated_at field so clients\n     * can keep track and cache permissions."
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "app",
+          "isMut": true,
+          "isSigner": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "app"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "App",
+                "path": "app.id"
+              }
+            ]
+          },
+          "relations": [
+            "authority"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
           "isSigner": false
         }
       ],
@@ -535,12 +609,26 @@
             }
           },
           {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
             "name": "name",
             "type": "string"
           },
           {
-            "name": "bump",
-            "type": "u8"
+            "name": "updatedAt",
+            "type": "i64"
+          },
+          {
+            "name": "cached",
+            "type": "bool"
+          },
+          {
+            "name": "fee",
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }
@@ -667,6 +755,36 @@
           {
             "name": "name",
             "type": "string"
+          },
+          {
+            "name": "cached",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpdateAppData",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "publicKey"
+          },
+          {
+            "name": "recovery",
+            "type": {
+              "option": "publicKey"
+            }
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "cached",
+            "type": "bool"
           }
         ]
       }
@@ -748,6 +866,26 @@
     }
   ],
   "events": [
+    {
+      "name": "AppChanged",
+      "fields": [
+        {
+          "name": "time",
+          "type": "i64",
+          "index": false
+        },
+        {
+          "name": "appId",
+          "type": "publicKey",
+          "index": true
+        },
+        {
+          "name": "authority",
+          "type": "publicKey",
+          "index": false
+        }
+      ]
+    },
     {
       "name": "RolesChanged",
       "fields": [
