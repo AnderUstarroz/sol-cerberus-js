@@ -7,6 +7,8 @@ import {SOL_CERBERUS_PROGRAM_ID} from '../constants';
 import SolCerberusIDL from '../idl/sol_cerberus.json';
 import {getAssociatedTokenAddress} from '@solana/spl-token';
 import {BN} from '@project-serum/anchor';
+import {getDB, RULE_STORE, bulk_insert, get_all_rules} from '../db';
+import {IDBPDatabase} from 'idb';
 
 // @TODO Remove this hack, only used to get the BN type included on package (used by app.updated_at).
 export const BIG_NUMBER: BN = 0;
@@ -24,7 +26,7 @@ export interface PermsType {
   };
 }
 
-export type AddressType = 'wallet' | 'nft' | 'collection';
+export type AddressTypeType = 'wallet' | 'nft' | 'collection';
 export type AddressRustType = {[k: string]: {}};
 export interface ResourcesType {
   [resource: string]: PermsType;
@@ -34,19 +36,12 @@ export interface RolesType {
   [role: string]: ResourcesType;
 }
 
-export interface NamespacesType {
+export interface CachedPermsType {
   [namespace: number]: RolesType;
 }
 
-export interface CachedPermsType {
-  cachedAt: number;
-  latestCreatedAt: number;
-  size: number;
-  perms: NamespacesType;
-}
-
 export interface AssignedRoleObjectType {
-  addressType: AddressType;
+  addressType: AddressTypeType;
   createdAt: number;
   nftMint: PublicKey | null;
   expiresAt: number | null;
@@ -80,14 +75,11 @@ export interface AccountsType {
   solCerberus: PublicKey;
 }
 export interface ConfigType {
+  appChangedCallback?: Function;
   rulesChangedCallback?: Function;
   rolesChangedCallback?: Function;
 }
 export const new_sc_app = (): PublicKey => web3.Keypair.generate().publicKey;
-
-export function default_cached_perms(): CachedPermsType {
-  return {cachedAt: 0, latestCreatedAt: 0, size: 0, perms: {}};
-}
 
 export const addressType: any = {
   Wallet: {wallet: {}},
@@ -102,8 +94,10 @@ export class SolCerberus {
   /** @internal */ #appData:
     | anchor.IdlAccounts<SolCerberusTypes>['app']
     | null = null;
-  /** @internal */ #permissions: CachedPermsType = default_cached_perms();
+  /** @internal */ #db: IDBPDatabase | null = null;
+  /** @internal */ #permissions: CachedPermsType = {};
   /** @internal */ #wallet: PublicKey;
+  /** @internal */ #appListener: number | null = null;
   /** @internal */ #rulesListener: number | null = null;
   /** @internal */ #rolesListener: number | null = null;
 
@@ -125,9 +119,26 @@ export class SolCerberus {
       provider,
     );
     this.#wallet = provider.publicKey as PublicKey;
+    this.#appListener = this.listenAppEvents(config);
     this.#rulesListener = this.listenRulesEvents(config);
     this.#rolesListener = this.listenRolesEvents(config);
     this.fetchAppData();
+  }
+
+  /**
+   * Subscribes to Sol Cerberus App updates to refresh the app data
+   * whenever the APP has been updated.
+   */
+  listenAppEvents(config: ConfigType) {
+    return this.#program.addEventListener('AppChanged', async (event, slot) => {
+      if (event.appId.toBase58() === this.appId.toBase58()) {
+        this.fetchAppData(); // Refresh APP data
+        if (config.hasOwnProperty('appChangedCallback')) {
+          //@ts-ignore
+          config.appChangedCallback(event, slot);
+        }
+      }
+    });
   }
 
   /**
@@ -136,11 +147,9 @@ export class SolCerberus {
   listenRulesEvents(config: ConfigType) {
     return config.rulesChangedCallback
       ? this.#program.addEventListener('RulesChanged', async (event, slot) => {
-          if (config.hasOwnProperty('rulesChangedCallback')) {
-            if (event.appId.toBase58() === this.appId.toBase58()) {
-              //@ts-ignore
-              config.rulesChangedCallback(event, slot);
-            }
+          if (event.appId.toBase58() === this.appId.toBase58()) {
+            //@ts-ignore
+            config.rulesChangedCallback(event, slot);
           }
         })
       : null;
@@ -152,11 +161,9 @@ export class SolCerberus {
   listenRolesEvents(config: ConfigType) {
     return config.rolesChangedCallback
       ? this.#program.addEventListener('RolesChanged', async (event, slot) => {
-          if (config.hasOwnProperty('rolesChangedCallback')) {
-            if (event.appId.toBase58() === this.appId.toBase58()) {
-              //@ts-ignore
-              config.rolesChangedCallback(event, slot);
-            }
+          if (event.appId.toBase58() === this.appId.toBase58()) {
+            //@ts-ignore
+            config.rolesChangedCallback(event, slot);
           }
         })
       : null;
@@ -166,12 +173,16 @@ export class SolCerberus {
     this.#appPda = await sc_app_pda(this.#appId);
     return this.#appPda;
   }
+
   async fetchAppData() {
     try {
       this.#appData = await this.program.account.app.fetch(
         await this.getAppPda(),
       );
-    } catch (e) {}
+      this.#db = await getDB(this.appId.toBase58(), this.#appData.updatedAt);
+    } catch (e) {
+      console.error('Failed to fetch APP data', e);
+    }
     return this.#appData;
   }
 
@@ -185,6 +196,10 @@ export class SolCerberus {
 
   get wallet() {
     return this.#wallet;
+  }
+
+  get db() {
+    return this.#db;
   }
 
   set wallet(address: PublicKey) {
@@ -238,7 +253,7 @@ export class SolCerberus {
     namespace: number = namespaces.Default,
   ): boolean {
     try {
-      let perm = this.#permissions.perms[namespace][role][resource][permission];
+      let perm = this.#permissions[namespace][role][resource][permission];
       if (!perm.expiresAt || perm.expiresAt > new Date().getTime()) {
         return true;
       }
@@ -300,8 +315,8 @@ export class SolCerberus {
     return null;
   }
 
-  parseAddressType(addressType: AddressRustType): AddressType {
-    return Object.keys(addressType)[0] as AddressType;
+  parseAddressType(addressType: AddressRustType): AddressTypeType {
+    return Object.keys(addressType)[0] as AddressTypeType;
   }
 
   /**
@@ -525,32 +540,22 @@ export class SolCerberus {
    * Fetches Permissions from blockchain
    */
   async fetchPerms(fromCache: boolean = true) {
-    let cached = this.cachedPerms();
-    let fetched = await this.#program.account.rule.all([
-      {
-        memcmp: {
-          offset: 8, // APP ID Starting byte (first 8 bytes is the account discriminator)
-          bytes: this.#appId.toBase58(), // base58 encoded string
+    const appData = await this.getAppData();
+    let cached = appData?.cached ? await this.cachedPerms() : {};
+    // Fetch perms only if they have been modified
+    if (!fromCache || !Object.keys(cached).length) {
+      let fetched = await this.#program.account.rule.all([
+        {
+          memcmp: {
+            offset: 8, // APP ID Starting byte (first 8 bytes is the account discriminator)
+            bytes: this.#appId.toBase58(), // base58 encoded string
+          },
         },
-      },
-    ]);
-    let latestCreatedAt: number = fetched.reduce(
-      (latestDate: number, data: any) => {
-        let date = data.account.createdAt.toNumber() * 1000;
-        return latestDate >= date ? latestDate : date;
-      },
-      0,
-    );
-    // Update cache only if Perms have been modified (different size or different creation date)
-    if (
-      !fromCache ||
-      cached.latestCreatedAt < latestCreatedAt ||
-      cached.size !== fetched.length
-    ) {
+      ]);
       cached = this.parsePerms(fetched);
-      cached.size = fetched.length;
-      cached.cachedAt = new Date().getTime();
-      this.setCachePerms(cached);
+      if (appData?.cached) {
+        this.setCachePerms(fetched);
+      }
     }
     this.#permissions = cached;
     return cached;
@@ -560,80 +565,92 @@ export class SolCerberus {
    * Parse Permissions into following mapped format:
    *
    * {
-   *   cachedAt: 0,
-   *   latestCreatedAt: 0,
-   *   perms: {
-   *      0: {
-   *       role1:  {
-   *          resource1: {
-   *            permission1: {
-   *              createdAt: 1677485630000;
-   *             expiresAt: null;
-   *           },
-   *           resource2: {...}
+   *    0: {
+   *      role1:  {
+   *        resource1: {
+   *          permission1: {
+   *            createdAt: 1677485630000;
+   *            expiresAt: null;
    *          },
-   *       },
-   *        role2:  {...}
+   *          resource2: {...}
+   *        },
    *      },
-   *      1: {...}
-   *   },
+   *      role2:  {...}
+   *    },
+   *    1: {...}
    * }
-   *
    */
   parsePerms(fetchedPerms: any): CachedPermsType {
-    if (!fetchedPerms) return default_cached_perms();
-    return fetchedPerms.reduce((result: CachedPermsType, account: any) => {
-      let data = account.account;
-      if (!result.perms.hasOwnProperty(data.namespace)) {
-        result.perms[data.namespace] = {};
-      }
-      if (!result.perms[data.namespace].hasOwnProperty(data.role)) {
-        result.perms[data.namespace][data.role] = {};
-      }
-      if (
-        !result.perms[data.namespace][data.role].hasOwnProperty(data.resource)
-      ) {
-        result.perms[data.namespace][data.role][data.resource] = {};
-      }
-      let created = data.createdAt.toNumber() * 1000; // Convert to milliseconds
-      result.perms[data.namespace][data.role][data.resource][data.permission] =
-        {
-          createdAt: created,
-          expiresAt: data.expiresAt ? data.expiresAt.toNumber() * 1000 : null,
-        };
-      if (created > result.latestCreatedAt) {
-        result.latestCreatedAt = created;
-      }
-      return result;
-    }, default_cached_perms());
-  }
-
-  cachePermsKey(): string {
-    return `SolCerberus-Perms-${this.#appId.toBase58()}`;
+    return fetchedPerms
+      ? fetchedPerms.reduce((perms: CachedPermsType, account: any) => {
+          const {namespace, role, resource, permission, createdAt, expiresAt} =
+            account.account;
+          return this.addPerm(
+            perms,
+            namespace,
+            role,
+            resource,
+            permission,
+            createdAt.toNumber() * 1000, // Convert to milliseconds
+            expiresAt ? expiresAt.toNumber() * 1000 : null, // Convert to milliseconds
+          );
+        }, {})
+      : {};
   }
 
   /**
-   * Stores Perms in localStorage (When available)
+   * Add a new Permission into the cached perms
    */
-  setCachePerms(perms: CachedPermsType) {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(this.cachePermsKey(), JSON.stringify(perms));
+  addPerm(
+    perms: CachedPermsType,
+    namespace: number,
+    role: string,
+    resource: string,
+    permission: string,
+    createdAt: number,
+    expiresAt: number | null,
+  ): CachedPermsType {
+    if (!perms.hasOwnProperty(namespace)) {
+      perms[namespace] = {};
+    }
+    if (!perms[namespace].hasOwnProperty(role)) {
+      perms[namespace][role] = {};
+    }
+    if (!perms[namespace][role].hasOwnProperty(resource)) {
+      perms[namespace][role][resource] = {};
+    }
+    perms[namespace][role][resource][permission] = {
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+    };
+    return perms;
+  }
+
+  /**
+   * Stores Perms in IDB (When available)
+   */
+  async setCachePerms(fetchedPerms: any) {
+    if (typeof window !== 'undefined' && this.db) {
+      // @TODO check the format returned by IDB
+      console.debug('Fetched perms:', fetchedPerms);
+      debugger;
+      bulk_insert(this.db, RULE_STORE, fetchedPerms);
     }
   }
 
   /**
-   * Retrieves Perms from localStorage (When available)
+   * Retrieves Perms from IDB (When available)
    */
-  cachedPerms(): CachedPermsType {
+  async cachedPerms(): Promise<CachedPermsType> {
     if (typeof window !== 'undefined') {
-      let cached = JSON.parse(
-        localStorage.getItem(this.cachePermsKey()) as string,
-      );
-      if (cached) {
-        return cached;
+      if (!this.permissions && this.db) {
+        // @TODO check the format returned by IDB
+        const rules = await get_all_rules(this.db);
+        // @TODO check the format returned by IDB
+        console.debug('IDB Rules:', rules);
       }
     }
-    return this.permissions ? this.permissions : default_cached_perms();
+    return {};
   }
 
   isUnauthorizedError(e: any) {
@@ -660,6 +677,9 @@ export class SolCerberus {
     }
     if (this.#rolesListener !== null) {
       this.program.removeEventListener(this.#rolesListener);
+    }
+    if (this.#appListener !== null) {
+      this.program.removeEventListener(this.#appListener);
     }
   }
 }
