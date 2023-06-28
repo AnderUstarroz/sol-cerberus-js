@@ -2,19 +2,17 @@ import {IDBPDatabase, openDB} from 'idb';
 import {PublicKey} from '@solana/web3.js';
 
 export interface RoleType {
-  id: string;
   role: string;
   address: PublicKey;
   addressType: 'wallet' | 'nft' | 'collection';
-  expiresAt: number;
+  expiresAt: number | null;
 }
 export interface RuleType {
-  id: string;
   namespace: number;
   role: string;
   resource: string;
   permission: string;
-  expiresAt: number;
+  expiresAt: number | null;
 }
 
 export const get_db_name = (appId: string): string =>
@@ -30,7 +28,6 @@ export const getDB = async (appId: string, version: number) => {
       for (const store of [ROLE_STORE, RULE_STORE]) {
         if (db.objectStoreNames.contains(store)) {
           db.deleteObjectStore(store);
-          console.debug(`Deleted store: ${store} v${_oldVersion}`);
         }
       }
       /**
@@ -50,7 +47,6 @@ export const getDB = async (appId: string, version: number) => {
        *  - role
        *  - resource
        *  - permission
-       *  - createdAt
        *  - expiresAt
        */
       var ruleStore = db.createObjectStore(RULE_STORE, {autoIncrement: true});
@@ -95,12 +91,12 @@ export async function bulk_insert(
       });
 
       transaction.oncomplete = () => {
-        console.log('Bulk insert completed successfully.');
+        console.log(`Bulk insert on "${store}" completed successfully`);
         resolve();
       };
 
       transaction.onerror = () => {
-        reject(new Error('Error performing bulk insert.'));
+        reject(new Error(`Error performing bulk insert on "${store}"`));
       };
     } catch (error) {
       reject(error);

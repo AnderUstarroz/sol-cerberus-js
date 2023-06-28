@@ -1,7 +1,13 @@
 import {web3} from '@project-serum/anchor';
 import {PublicKey} from '@solana/web3.js';
 import * as anchor from '@project-serum/anchor';
-import {sc_app_pda, sc_rule_pda, sc_role_pda, nft_metadata_pda} from '../pdas';
+import {
+  sc_app_pda,
+  sc_rule_pda,
+  sc_role_pda,
+  nft_metadata_pda,
+  sc_seed_pda,
+} from '../pdas';
 import {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
 import {SOL_CERBERUS_PROGRAM_ID} from '../constants';
 import SolCerberusIDL from '../idl/sol_cerberus.json';
@@ -16,12 +22,16 @@ export const BIG_NUMBER: BN = 0;
 export type {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
 
 export enum namespaces {
-  Default = 0,
-  Internal = 1,
+  Rule = 0,
+  AssignRole = 1,
+  DeleteAssignRole = 2,
+  AddRuleNSRole = 3,
+  AddRuleResourcePerm = 4,
+  DeleteRuleNSRole = 5,
+  DeleteRuleResourcePerm = 6,
 }
 export interface PermsType {
   [perm: string]: {
-    createdAt: number;
     expiresAt: number | null;
   };
 }
@@ -42,7 +52,6 @@ export interface CachedPermsType {
 
 export interface AssignedRoleObjectType {
   addressType: AddressTypeType;
-  createdAt: number;
   nftMint: PublicKey | null;
   expiresAt: number | null;
 }
@@ -69,9 +78,11 @@ export interface AddressByRoleType {
 export interface AccountsType {
   solCerberusApp: PublicKey;
   solCerberusRule: PublicKey | null;
+  solCerberusRule2?: PublicKey | null;
   solCerberusRole: PublicKey | null;
-  solCerberusTokenAcc: PublicKey | null;
+  solCerberusToken: PublicKey | null;
   solCerberusMetadata: PublicKey | null;
+  solCerberusSeed: PublicKey | null;
   solCerberus: PublicKey;
 }
 export interface ConfigType {
@@ -122,7 +133,6 @@ export class SolCerberus {
     this.#appListener = this.listenAppEvents(config);
     this.#rulesListener = this.listenRulesEvents(config);
     this.#rolesListener = this.listenRolesEvents(config);
-    this.fetchAppData();
   }
 
   /**
@@ -202,6 +212,14 @@ export class SolCerberus {
     return this.#db;
   }
 
+  get appPda() {
+    return this.#appPda;
+  }
+
+  get appData() {
+    return this.#appData;
+  }
+
   set wallet(address: PublicKey) {
     this.#wallet = address;
   }
@@ -214,18 +232,19 @@ export class SolCerberus {
     return this.#appData ? this.#appData : await this.fetchAppData();
   }
 
+  isAuthority = () =>
+    this.wallet.toBase58() === this.appData?.authority.toBase58();
+
   get permissions() {
     return this.#permissions;
   }
 
-  permsWildcards(resource: string, permission: string) {
-    return [
-      [resource, permission],
-      [resource, '*'],
-      ['*', permission],
-      ['*', '*'],
-    ];
-  }
+  permsWildcards = (resource: string, permission: string) => [
+    [resource, permission],
+    [resource, '*'],
+    ['*', permission],
+    ['*', '*'],
+  ];
 
   /**
    * Returns True if the rule is positive for at least one of the provided roles.
@@ -234,7 +253,7 @@ export class SolCerberus {
     roles: AddressByRoleType,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Default,
+    namespace: number = namespaces.Rule,
   ) {
     // Authority has Full access:
     if (
@@ -250,7 +269,7 @@ export class SolCerberus {
     role: string,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Default,
+    namespace: number = namespaces.Rule,
   ): boolean {
     try {
       let perm = this.#permissions[namespace][role][resource][permission];
@@ -283,7 +302,7 @@ export class SolCerberus {
     roles: AddressByRoleType,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Default,
+    namespace: number = namespaces.Rule,
   ): [string, string, string, number] | null {
     for (const role in roles) {
       // Verify assigned role is not expired
@@ -302,7 +321,7 @@ export class SolCerberus {
     roles: AddressByRoleType,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Default,
+    namespace: number = namespaces.Rule,
   ): Promise<PublicKey | null> {
     try {
       const rule = this.findRule(roles, resource, permission, namespace);
@@ -394,20 +413,44 @@ export class SolCerberus {
         ...accountsFilters,
       ])
     ).reduce((assignedRoles, data) => {
-      let address = data.account.address.toBase58();
-      if (!assignedRoles.hasOwnProperty(address)) {
-        assignedRoles[address] = {};
+      if (data.account.address) {
+        let address = data.account.address.toBase58();
+        if (!assignedRoles.hasOwnProperty(address)) {
+          assignedRoles[address] = {};
+        }
+        assignedRoles[address][data.account.role] = {
+          addressType: this.parseAddressType(data.account.addressType),
+          nftMint: null,
+          expiresAt: data.account.expiresAt
+            ? data.account.expiresAt.toNumber() * 1000 // Convert to milliseconds
+            : null,
+        };
       }
-      assignedRoles[address][data.account.role] = {
-        addressType: this.parseAddressType(data.account.addressType),
-        createdAt: data.account.createdAt.toNumber() * 1000,
-        nftMint: null,
-        expiresAt: data.account.expiresAt
-          ? data.account.expiresAt.toNumber() * 1000 // Convert to milliseconds
-          : null,
-      };
       return assignedRoles;
     }, {} as RolesByAddressType);
+  }
+
+  async defaultAccounts(
+    cpi: boolean,
+    namespace: namespaces = namespaces.Rule,
+  ): Promise<AccountsType> {
+    let accs = {
+      solCerberusApp: await this.getAppPda(), // Fetched
+      solCerberusRole: null,
+      solCerberusRule: null,
+      solCerberusToken: null,
+      solCerberusMetadata: null,
+      solCerberusSeed: null,
+    } as AccountsType;
+    // Cross-Program Invocations (CPI) require Sol Cerberus program account.
+    if (cpi) {
+      accs.solCerberus = this.program.programId;
+    }
+    // Add/Delete Rules require an additional "solCerberusRule2" PDA
+    if (namespace >= namespaces.AddRuleNSRole) {
+      accs.solCerberusRule2 = null;
+    }
+    return accs;
   }
 
   /**
@@ -415,8 +458,9 @@ export class SolCerberus {
    *    - solCerberusApp: app PDA,
    *    - solCerberusRule: rule PDA,
    *    - solCerberusRole: role PDA,
-   *    - solCerberusTokenAcc: tokenAccount PDA,
+   *    - solCerberusToken: tokenAccount PDA,
    *    - solCerberusMetadata: Metaplex PDA,
+   *    - solCerberusSeed: Seed PDA,
    *    - solCerberus: Program PDA,
    *
    */
@@ -424,19 +468,12 @@ export class SolCerberus {
     roles: AddressByRoleType,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Default,
+    namespace: number = namespaces.Rule,
   ): Promise<AccountsType> {
-    let defaultOutput = {
-      solCerberusApp: await this.getAppPda(),
-      solCerberusRule: null,
-      solCerberusRole: null,
-      solCerberusTokenAcc: null,
-      solCerberusMetadata: null,
-      solCerberus: this.program.programId,
-    } as AccountsType;
+    let defaultOutput = await this.defaultAccounts(true);
     try {
       const rule = this.findRule(roles, resource, permission, namespace);
-      if (!rule) {
+      if (!rule || this.isAuthority()) {
         return defaultOutput;
       }
       const [roleFound, resourceFound, PermissionFound, ns] = rule;
@@ -483,15 +520,19 @@ export class SolCerberus {
     asyncFuncs.push(async () =>
       this.getTokenAccount(roles[role][assignedAddress], assignedAddress),
     );
-    // Metadata PDA fetcher (not required)
+    // Metadata PDA fetcher (optional)
     asyncFuncs.push(async () =>
       this.getMetadataAccount(roles[role][assignedAddress]),
     );
+    // Seed PDA fetcher
+    asyncFuncs.push(async () => sc_seed_pda(this.wallet));
+
     const pdaNames = [
       'solCerberusRule',
       'solCerberusRole',
-      'solCerberusTokenAcc',
+      'solCerberusToken',
       'solCerberusMetadata',
+      'solCerberusSeed',
     ];
     (await Promise.allSettled(asyncFuncs.map(f => f()))).map(
       (pdaRequest: any, index: number) => {
@@ -542,6 +583,7 @@ export class SolCerberus {
   async fetchPerms(fromCache: boolean = true) {
     const appData = await this.getAppData();
     let cached = appData?.cached ? await this.cachedPerms() : {};
+    console.log(cached); //TODO
     // Fetch perms only if they have been modified
     if (!fromCache || !Object.keys(cached).length) {
       let fetched = await this.#program.account.rule.all([
@@ -569,7 +611,6 @@ export class SolCerberus {
    *      role1:  {
    *        resource1: {
    *          permission1: {
-   *            createdAt: 1677485630000;
    *            expiresAt: null;
    *          },
    *          resource2: {...}
@@ -580,10 +621,14 @@ export class SolCerberus {
    *    1: {...}
    * }
    */
-  parsePerms(fetchedPerms: any): CachedPermsType {
+  parsePerms(
+    fetchedPerms: anchor.ProgramAccount<
+      anchor.IdlAccounts<SolCerberusTypes>['rule']
+    >[],
+  ): CachedPermsType {
     return fetchedPerms
-      ? fetchedPerms.reduce((perms: CachedPermsType, account: any) => {
-          const {namespace, role, resource, permission, createdAt, expiresAt} =
+      ? fetchedPerms.reduce((perms: CachedPermsType, account) => {
+          const {namespace, role, resource, permission, expiresAt} =
             account.account;
           return this.addPerm(
             perms,
@@ -591,7 +636,6 @@ export class SolCerberus {
             role,
             resource,
             permission,
-            createdAt.toNumber() * 1000, // Convert to milliseconds
             expiresAt ? expiresAt.toNumber() * 1000 : null, // Convert to milliseconds
           );
         }, {})
@@ -607,7 +651,6 @@ export class SolCerberus {
     role: string,
     resource: string,
     permission: string,
-    createdAt: number,
     expiresAt: number | null,
   ): CachedPermsType {
     if (!perms.hasOwnProperty(namespace)) {
@@ -620,7 +663,6 @@ export class SolCerberus {
       perms[namespace][role][resource] = {};
     }
     perms[namespace][role][resource][permission] = {
-      createdAt: createdAt,
       expiresAt: expiresAt,
     };
     return perms;
@@ -629,12 +671,27 @@ export class SolCerberus {
   /**
    * Stores Perms in IDB (When available)
    */
-  async setCachePerms(fetchedPerms: any) {
+  async setCachePerms(
+    fetchedPerms: anchor.ProgramAccount<
+      anchor.IdlAccounts<SolCerberusTypes>['rule']
+    >[],
+  ) {
     if (typeof window !== 'undefined' && this.db) {
       // @TODO check the format returned by IDB
-      console.debug('Fetched perms:', fetchedPerms);
-      debugger;
-      bulk_insert(this.db, RULE_STORE, fetchedPerms);
+      console.log('Fetched perms:', fetchedPerms);
+      bulk_insert(
+        this.db,
+        RULE_STORE,
+        fetchedPerms.map(item => ({
+          namespace: item.account.namespace,
+          role: item.account.role,
+          resource: item.account.resource,
+          permission: item.account.permission,
+          expiresAt: item.account.expiresAt
+            ? item.account.expiresAt.toNumber() * 1000
+            : null,
+        })),
+      );
     }
   }
 
@@ -643,11 +700,20 @@ export class SolCerberus {
    */
   async cachedPerms(): Promise<CachedPermsType> {
     if (typeof window !== 'undefined') {
-      if (!this.permissions && this.db) {
-        // @TODO check the format returned by IDB
+      if (this.db) {
         const rules = await get_all_rules(this.db);
-        // @TODO check the format returned by IDB
-        console.debug('IDB Rules:', rules);
+        return rules.reduce(
+          (perms: CachedPermsType, rule) =>
+            this.addPerm(
+              perms,
+              rule.namespace,
+              rule.role,
+              rule.resource,
+              rule.permission,
+              rule.expiresAt, // Already converted to milliseconds
+            ),
+          {},
+        );
       }
     }
     return {};

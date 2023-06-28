@@ -1,5 +1,5 @@
 export type SolCerberus = {
-  "version": "0.1.8",
+  "version": "0.1.7",
   "name": "sol_cerberus",
   "instructions": [
     {
@@ -129,32 +129,9 @@ export type SolCerberus = {
       "name": "addRule",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          },
-          "relations": [
-            "authority"
-          ]
         },
         {
           "name": "rule",
@@ -194,7 +171,145 @@ export type SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "app"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "App",
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRule2",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -218,29 +333,9 @@ export type SolCerberus = {
       "name": "deleteRule",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          }
         },
         {
           "name": "rule",
@@ -276,7 +371,130 @@ export type SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRule2",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -284,6 +502,11 @@ export type SolCerberus = {
         {
           "name": "collector",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
           "isSigner": false
         }
       ],
@@ -293,12 +516,17 @@ export type SolCerberus = {
       "name": "assignRole",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
         },
         {
-          "name": "app",
+          "name": "role",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusApp",
           "isMut": false,
           "isSigner": false,
           "pda": {
@@ -312,39 +540,85 @@ export type SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
               }
             ]
-          },
-          "relations": [
-            "authority"
-          ]
+          }
         },
         {
-          "name": "role",
-          "isMut": true,
+          "name": "solCerberusRole",
+          "isMut": false,
           "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
           "pda": {
             "seeds": [
               {
-                "kind": "arg",
-                "type": {
-                  "defined": "AssignRoleData"
-                },
-                "path": "assign_role_data.role"
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
               },
               {
-                "kind": "arg",
-                "type": {
-                  "defined": "AssignRoleData"
-                },
-                "path": "assign_role_data.address"
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
               },
               {
                 "kind": "account",
                 "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -368,29 +642,9 @@ export type SolCerberus = {
       "name": "deleteAssignedRole",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          }
         },
         {
           "name": "role",
@@ -406,7 +660,9 @@ export type SolCerberus = {
               },
               {
                 "kind": "account",
-                "type": "publicKey",
+                "type": {
+                  "option": "publicKey"
+                },
                 "account": "Role",
                 "path": "role.address"
               },
@@ -414,7 +670,90 @@ export type SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -422,6 +761,11 @@ export type SolCerberus = {
         {
           "name": "collector",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
           "isSigner": false
         }
       ],
@@ -471,10 +815,13 @@ export type SolCerberus = {
     },
     {
       "name": "allowed",
+      "docs": [
+        "* Checks if the current user is authorized to run the instruction,\n     * throwing \"Unauthorized\" error otherwise."
+      ],
       "accounts": [
         {
           "name": "signer",
-          "isMut": false,
+          "isMut": true,
           "isSigner": true
         },
         {
@@ -541,32 +888,10 @@ export type SolCerberus = {
           "name": "solCerberusRole",
           "isMut": false,
           "isSigner": false,
-          "isOptional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "type": "string",
-                "account": "Role",
-                "path": "sol_cerberus_role.role"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "Role",
-                "path": "sol_cerberus_role.address"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "Rule",
-                "path": "sol_cerberus_rule"
-              }
-            ]
-          }
+          "isOptional": true
         },
         {
-          "name": "solCerberusTokenAcc",
+          "name": "solCerberusToken",
           "isMut": false,
           "isSigner": false,
           "isOptional": true
@@ -576,11 +901,36 @@ export type SolCerberus = {
           "isMut": false,
           "isSigner": false,
           "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
         }
       ],
       "args": [
         {
-          "name": "allowedParams",
+          "name": "allowedRule",
           "type": {
             "defined": "AllowedRule"
           }
@@ -629,6 +979,28 @@ export type SolCerberus = {
             "type": {
               "option": "u64"
             }
+          },
+          {
+            "name": "class",
+            "type": "u8"
+          },
+          {
+            "name": "expiresAt",
+            "type": {
+              "option": "i64"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "seed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "initialized",
+            "type": "bool"
           }
         ]
       }
@@ -644,7 +1016,9 @@ export type SolCerberus = {
           },
           {
             "name": "address",
-            "type": "publicKey"
+            "type": {
+              "option": "publicKey"
+            }
           },
           {
             "name": "role",
@@ -655,10 +1029,6 @@ export type SolCerberus = {
             "type": {
               "defined": "AddressType"
             }
-          },
-          {
-            "name": "createdAt",
-            "type": "i64"
           },
           {
             "name": "expiresAt",
@@ -699,10 +1069,6 @@ export type SolCerberus = {
             "type": "string"
           },
           {
-            "name": "createdAt",
-            "type": "i64"
-          },
-          {
             "name": "expiresAt",
             "type": {
               "option": "i64"
@@ -725,6 +1091,10 @@ export type SolCerberus = {
           {
             "name": "appId",
             "type": "publicKey"
+          },
+          {
+            "name": "namespace",
+            "type": "u8"
           },
           {
             "name": "resource",
@@ -785,6 +1155,22 @@ export type SolCerberus = {
           {
             "name": "cached",
             "type": "bool"
+          },
+          {
+            "name": "fee",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "class",
+            "type": "u8"
+          },
+          {
+            "name": "expiresAt",
+            "type": {
+              "option": "i64"
+            }
           }
         ]
       }
@@ -796,7 +1182,9 @@ export type SolCerberus = {
         "fields": [
           {
             "name": "address",
-            "type": "publicKey"
+            "type": {
+              "option": "publicKey"
+            }
           },
           {
             "name": "role",
@@ -848,6 +1236,25 @@ export type SolCerberus = {
       }
     },
     {
+      "name": "Classes",
+      "docs": [
+        "Classes:",
+        "0 => Trial  (Apps with default fees)",
+        "1 => Free   (Apps with no fees)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Trial"
+          },
+          {
+            "name": "Free"
+          }
+        ]
+      }
+    },
+    {
       "name": "AddressType",
       "type": {
         "kind": "enum",
@@ -856,10 +1263,49 @@ export type SolCerberus = {
             "name": "Wallet"
           },
           {
-            "name": "NFT"
+            "name": "Nft"
           },
           {
             "name": "Collection"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Namespaces",
+      "docs": [
+        "Namespaces:",
+        "0 => Rule (Normal permissions)",
+        "1 => AssignRole (White list of roles that can be assigned by certain role)",
+        "2 => DeleteAssignRole (White list of roles that can be deleted by certain role)",
+        "3 => AddRuleNSRole (White list of namespaces and roles that can be created by certain role)",
+        "4 => AddRuleResourcePerm (White list of resources and permissions that can be created by certain role)",
+        "5 => DeleteRuleNSRole (White list of namespaces and roles that can be deleted by certain role)",
+        "6 => DeleteRuleResourcePerm (White list of resources and permissions that can be deleted by certain role)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Rule"
+          },
+          {
+            "name": "AssignRole"
+          },
+          {
+            "name": "DeleteAssignRole"
+          },
+          {
+            "name": "AddRuleNSRole"
+          },
+          {
+            "name": "AddRuleResourcePerm"
+          },
+          {
+            "name": "DeleteRuleNSRole"
+          },
+          {
+            "name": "DeleteRuleResourcePerm"
           }
         ]
       }
@@ -955,14 +1401,39 @@ export type SolCerberus = {
     },
     {
       "code": 6007,
-      "name": "SolCerberusAppIdMissing",
+      "name": "InvalidAddressType",
+      "msg": "Invalid address type, mus be either 'Wallet', 'Nft', 'Collection' or a wildcard '*'"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidNamespace",
+      "msg": "Invalid namespace, must be either an u8 number (0-255) or a wildcard '*'"
+    },
+    {
+      "code": 6009,
+      "name": "MissingSolCerberusAppId",
       "msg": "SOL_CERBERUS_APP_ID is missing on lib.rs"
+    },
+    {
+      "code": 6010,
+      "name": "MissingSeedAccount",
+      "msg": "The Sol Cerberus Seed account is missing"
+    },
+    {
+      "code": 6011,
+      "name": "UnauthorizedProgramAuthority",
+      "msg": "Only program authority can perform this action"
+    },
+    {
+      "code": 6012,
+      "name": "InsufficientFunds",
+      "msg": "Insufficient funds for transaction"
     }
   ]
 };
 
 export const IDL: SolCerberus = {
-  "version": "0.1.8",
+  "version": "0.1.7",
   "name": "sol_cerberus",
   "instructions": [
     {
@@ -1092,32 +1563,9 @@ export const IDL: SolCerberus = {
       "name": "addRule",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          },
-          "relations": [
-            "authority"
-          ]
         },
         {
           "name": "rule",
@@ -1157,7 +1605,145 @@ export const IDL: SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "app"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "App",
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRule2",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -1181,29 +1767,9 @@ export const IDL: SolCerberus = {
       "name": "deleteRule",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          }
         },
         {
           "name": "rule",
@@ -1239,7 +1805,130 @@ export const IDL: SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusRule2",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule2.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -1247,6 +1936,11 @@ export const IDL: SolCerberus = {
         {
           "name": "collector",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
           "isSigner": false
         }
       ],
@@ -1256,12 +1950,17 @@ export const IDL: SolCerberus = {
       "name": "assignRole",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
         },
         {
-          "name": "app",
+          "name": "role",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusApp",
           "isMut": false,
           "isSigner": false,
           "pda": {
@@ -1275,39 +1974,85 @@ export const IDL: SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
               }
             ]
-          },
-          "relations": [
-            "authority"
-          ]
+          }
         },
         {
-          "name": "role",
-          "isMut": true,
+          "name": "solCerberusRole",
+          "isMut": false,
           "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
           "pda": {
             "seeds": [
               {
-                "kind": "arg",
-                "type": {
-                  "defined": "AssignRoleData"
-                },
-                "path": "assign_role_data.role"
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
               },
               {
-                "kind": "arg",
-                "type": {
-                  "defined": "AssignRoleData"
-                },
-                "path": "assign_role_data.address"
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
               },
               {
                 "kind": "account",
                 "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -1331,29 +2076,9 @@ export const IDL: SolCerberus = {
       "name": "deleteAssignedRole",
       "accounts": [
         {
-          "name": "authority",
+          "name": "signer",
           "isMut": true,
           "isSigner": true
-        },
-        {
-          "name": "app",
-          "isMut": false,
-          "isSigner": false,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "type": "string",
-                "value": "app"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "App",
-                "path": "app.id"
-              }
-            ]
-          }
         },
         {
           "name": "role",
@@ -1369,7 +2094,9 @@ export const IDL: SolCerberus = {
               },
               {
                 "kind": "account",
-                "type": "publicKey",
+                "type": {
+                  "option": "publicKey"
+                },
                 "account": "Role",
                 "path": "role.address"
               },
@@ -1377,7 +2104,90 @@ export const IDL: SolCerberus = {
                 "kind": "account",
                 "type": "publicKey",
                 "account": "App",
-                "path": "app.id"
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusRole",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusRule",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "type": "u8",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.namespace"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.role"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.resource"
+              },
+              {
+                "kind": "account",
+                "type": "string",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.permission"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "Rule",
+                "path": "sol_cerberus_rule.app_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "solCerberusToken",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusMetadata",
+          "isMut": false,
+          "isSigner": false,
+          "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
               }
             ]
           }
@@ -1385,6 +2195,11 @@ export const IDL: SolCerberus = {
         {
           "name": "collector",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
           "isSigner": false
         }
       ],
@@ -1434,10 +2249,13 @@ export const IDL: SolCerberus = {
     },
     {
       "name": "allowed",
+      "docs": [
+        "* Checks if the current user is authorized to run the instruction,\n     * throwing \"Unauthorized\" error otherwise."
+      ],
       "accounts": [
         {
           "name": "signer",
-          "isMut": false,
+          "isMut": true,
           "isSigner": true
         },
         {
@@ -1504,32 +2322,10 @@ export const IDL: SolCerberus = {
           "name": "solCerberusRole",
           "isMut": false,
           "isSigner": false,
-          "isOptional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "account",
-                "type": "string",
-                "account": "Role",
-                "path": "sol_cerberus_role.role"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "Role",
-                "path": "sol_cerberus_role.address"
-              },
-              {
-                "kind": "account",
-                "type": "publicKey",
-                "account": "Rule",
-                "path": "sol_cerberus_rule"
-              }
-            ]
-          }
+          "isOptional": true
         },
         {
-          "name": "solCerberusTokenAcc",
+          "name": "solCerberusToken",
           "isMut": false,
           "isSigner": false,
           "isOptional": true
@@ -1539,11 +2335,36 @@ export const IDL: SolCerberus = {
           "isMut": false,
           "isSigner": false,
           "isOptional": true
+        },
+        {
+          "name": "solCerberusSeed",
+          "isMut": true,
+          "isSigner": false,
+          "isOptional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "seed"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "path": "signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
         }
       ],
       "args": [
         {
-          "name": "allowedParams",
+          "name": "allowedRule",
           "type": {
             "defined": "AllowedRule"
           }
@@ -1592,6 +2413,28 @@ export const IDL: SolCerberus = {
             "type": {
               "option": "u64"
             }
+          },
+          {
+            "name": "class",
+            "type": "u8"
+          },
+          {
+            "name": "expiresAt",
+            "type": {
+              "option": "i64"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "seed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "initialized",
+            "type": "bool"
           }
         ]
       }
@@ -1607,7 +2450,9 @@ export const IDL: SolCerberus = {
           },
           {
             "name": "address",
-            "type": "publicKey"
+            "type": {
+              "option": "publicKey"
+            }
           },
           {
             "name": "role",
@@ -1618,10 +2463,6 @@ export const IDL: SolCerberus = {
             "type": {
               "defined": "AddressType"
             }
-          },
-          {
-            "name": "createdAt",
-            "type": "i64"
           },
           {
             "name": "expiresAt",
@@ -1662,10 +2503,6 @@ export const IDL: SolCerberus = {
             "type": "string"
           },
           {
-            "name": "createdAt",
-            "type": "i64"
-          },
-          {
             "name": "expiresAt",
             "type": {
               "option": "i64"
@@ -1688,6 +2525,10 @@ export const IDL: SolCerberus = {
           {
             "name": "appId",
             "type": "publicKey"
+          },
+          {
+            "name": "namespace",
+            "type": "u8"
           },
           {
             "name": "resource",
@@ -1748,6 +2589,22 @@ export const IDL: SolCerberus = {
           {
             "name": "cached",
             "type": "bool"
+          },
+          {
+            "name": "fee",
+            "type": {
+              "option": "u64"
+            }
+          },
+          {
+            "name": "class",
+            "type": "u8"
+          },
+          {
+            "name": "expiresAt",
+            "type": {
+              "option": "i64"
+            }
           }
         ]
       }
@@ -1759,7 +2616,9 @@ export const IDL: SolCerberus = {
         "fields": [
           {
             "name": "address",
-            "type": "publicKey"
+            "type": {
+              "option": "publicKey"
+            }
           },
           {
             "name": "role",
@@ -1811,6 +2670,25 @@ export const IDL: SolCerberus = {
       }
     },
     {
+      "name": "Classes",
+      "docs": [
+        "Classes:",
+        "0 => Trial  (Apps with default fees)",
+        "1 => Free   (Apps with no fees)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Trial"
+          },
+          {
+            "name": "Free"
+          }
+        ]
+      }
+    },
+    {
       "name": "AddressType",
       "type": {
         "kind": "enum",
@@ -1819,10 +2697,49 @@ export const IDL: SolCerberus = {
             "name": "Wallet"
           },
           {
-            "name": "NFT"
+            "name": "Nft"
           },
           {
             "name": "Collection"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Namespaces",
+      "docs": [
+        "Namespaces:",
+        "0 => Rule (Normal permissions)",
+        "1 => AssignRole (White list of roles that can be assigned by certain role)",
+        "2 => DeleteAssignRole (White list of roles that can be deleted by certain role)",
+        "3 => AddRuleNSRole (White list of namespaces and roles that can be created by certain role)",
+        "4 => AddRuleResourcePerm (White list of resources and permissions that can be created by certain role)",
+        "5 => DeleteRuleNSRole (White list of namespaces and roles that can be deleted by certain role)",
+        "6 => DeleteRuleResourcePerm (White list of resources and permissions that can be deleted by certain role)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Rule"
+          },
+          {
+            "name": "AssignRole"
+          },
+          {
+            "name": "DeleteAssignRole"
+          },
+          {
+            "name": "AddRuleNSRole"
+          },
+          {
+            "name": "AddRuleResourcePerm"
+          },
+          {
+            "name": "DeleteRuleNSRole"
+          },
+          {
+            "name": "DeleteRuleResourcePerm"
           }
         ]
       }
@@ -1918,8 +2835,33 @@ export const IDL: SolCerberus = {
     },
     {
       "code": 6007,
-      "name": "SolCerberusAppIdMissing",
+      "name": "InvalidAddressType",
+      "msg": "Invalid address type, mus be either 'Wallet', 'Nft', 'Collection' or a wildcard '*'"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidNamespace",
+      "msg": "Invalid namespace, must be either an u8 number (0-255) or a wildcard '*'"
+    },
+    {
+      "code": 6009,
+      "name": "MissingSolCerberusAppId",
       "msg": "SOL_CERBERUS_APP_ID is missing on lib.rs"
+    },
+    {
+      "code": 6010,
+      "name": "MissingSeedAccount",
+      "msg": "The Sol Cerberus Seed account is missing"
+    },
+    {
+      "code": 6011,
+      "name": "UnauthorizedProgramAuthority",
+      "msg": "Only program authority can perform this action"
+    },
+    {
+      "code": 6012,
+      "name": "InsufficientFunds",
+      "msg": "Insufficient funds for transaction"
     }
   ]
 };
