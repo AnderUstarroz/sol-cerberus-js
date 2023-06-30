@@ -1,9 +1,8 @@
 import {IDBPDatabase, openDB} from 'idb';
-import {PublicKey} from '@solana/web3.js';
 
 export interface RoleType {
   role: string;
-  address: PublicKey;
+  address: string;
   addressType: 'wallet' | 'nft' | 'collection';
   expiresAt: number | null;
 }
@@ -15,20 +14,18 @@ export interface RuleType {
   expiresAt: number | null;
 }
 
-export const get_db_name = (appId: string): string =>
-  `SolCerberusDB_${appId.slice(0, 7)}`;
+export const get_db_name = (appId: string, type: string): string =>
+  `SolCerberus${type}DB_${appId.slice(0, 7)}`;
 
 export const RULE_STORE = 'RuleStore';
 export const ROLE_STORE = 'RoleStore';
 
-export const getDB = async (appId: string, version: number) => {
-  return await openDB(get_db_name(appId), version, {
+export const getRoleDB = async (appId: string, version: number) =>
+  await openDB(get_db_name(appId, 'Role'), version, {
     upgrade(db, _oldVersion, _newVersion, _transaction) {
       // Erase all previous data when using a new DB version
-      for (const store of [ROLE_STORE, RULE_STORE]) {
-        if (db.objectStoreNames.contains(store)) {
-          db.deleteObjectStore(store);
-        }
+      if (db.objectStoreNames.contains(ROLE_STORE)) {
+        db.deleteObjectStore(ROLE_STORE);
       }
       /**
        * Role store contains:
@@ -41,6 +38,16 @@ export const getDB = async (appId: string, version: number) => {
       roleStore.createIndex('compoundIndex', ['address', 'role'], {
         unique: true,
       });
+    },
+  });
+
+export const getRuleDB = async (appId: string, version: number) =>
+  await openDB(get_db_name(appId, 'Rule'), version, {
+    upgrade(db, _oldVersion, _newVersion, _transaction) {
+      // Erase all previous data when using a new DB version
+      if (db.objectStoreNames.contains(RULE_STORE)) {
+        db.deleteObjectStore(RULE_STORE);
+      }
       /**
        * Rule store contains:
        *  - namespace
@@ -59,20 +66,16 @@ export const getDB = async (appId: string, version: number) => {
       );
     },
   });
-};
 
-export const get_all_rules = async (db: IDBPDatabase) => {
-  const tx = db.transaction(RULE_STORE, 'readonly');
-  const store = tx.objectStore(RULE_STORE);
-  return await store.getAll();
-};
+export const fetchAll = async (db: IDBPDatabase, store: string) =>
+  await db.transaction(store, 'readonly').objectStore(store).getAll();
 
 export const put_role = async (
   appId: string,
   version: number,
   role: RoleType,
 ) => {
-  const db = await getDB(appId, version);
+  const db = await getRoleDB(appId, version);
   await db.put(ROLE_STORE, role);
 };
 

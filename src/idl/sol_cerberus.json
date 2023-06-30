@@ -774,7 +774,7 @@
     {
       "name": "updateCache",
       "docs": [
-        "* Updates the app.updated_at field so clients\n     * can keep track and cache permissions."
+        "* Updates the app.updated_at field so clients\n     * can keep track and cache roles & rules."
       ],
       "accounts": [
         {
@@ -811,7 +811,12 @@
           "isSigner": false
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "cacheUpdated",
+          "type": "u8"
+        }
+      ]
     },
     {
       "name": "allowed",
@@ -967,7 +972,11 @@
             "type": "string"
           },
           {
-            "name": "updatedAt",
+            "name": "rolesUpdatedAt",
+            "type": "i64"
+          },
+          {
+            "name": "rulesUpdatedAt",
             "type": "i64"
           },
           {
@@ -1250,6 +1259,25 @@
           },
           {
             "name": "Free"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CacheUpdated",
+      "docs": [
+        "CacheUpdated:",
+        "0 => Roles (When roles change)",
+        "1 => Rules   (When rules change)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Roles"
+          },
+          {
+            "name": "Rules"
           }
         ]
       }

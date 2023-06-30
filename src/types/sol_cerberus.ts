@@ -774,7 +774,7 @@ export type SolCerberus = {
     {
       "name": "updateCache",
       "docs": [
-        "* Updates the app.updated_at field so clients\n     * can keep track and cache permissions."
+        "* Updates the app.updated_at field so clients\n     * can keep track and cache roles & rules."
       ],
       "accounts": [
         {
@@ -811,7 +811,12 @@ export type SolCerberus = {
           "isSigner": false
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "cacheUpdated",
+          "type": "u8"
+        }
+      ]
     },
     {
       "name": "allowed",
@@ -967,7 +972,11 @@ export type SolCerberus = {
             "type": "string"
           },
           {
-            "name": "updatedAt",
+            "name": "rolesUpdatedAt",
+            "type": "i64"
+          },
+          {
+            "name": "rulesUpdatedAt",
             "type": "i64"
           },
           {
@@ -1250,6 +1259,25 @@ export type SolCerberus = {
           },
           {
             "name": "Free"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CacheUpdated",
+      "docs": [
+        "CacheUpdated:",
+        "0 => Roles (When roles change)",
+        "1 => Rules   (When rules change)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Roles"
+          },
+          {
+            "name": "Rules"
           }
         ]
       }
@@ -2208,7 +2236,7 @@ export const IDL: SolCerberus = {
     {
       "name": "updateCache",
       "docs": [
-        "* Updates the app.updated_at field so clients\n     * can keep track and cache permissions."
+        "* Updates the app.updated_at field so clients\n     * can keep track and cache roles & rules."
       ],
       "accounts": [
         {
@@ -2245,7 +2273,12 @@ export const IDL: SolCerberus = {
           "isSigner": false
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "cacheUpdated",
+          "type": "u8"
+        }
+      ]
     },
     {
       "name": "allowed",
@@ -2401,7 +2434,11 @@ export const IDL: SolCerberus = {
             "type": "string"
           },
           {
-            "name": "updatedAt",
+            "name": "rolesUpdatedAt",
+            "type": "i64"
+          },
+          {
+            "name": "rulesUpdatedAt",
             "type": "i64"
           },
           {
@@ -2684,6 +2721,25 @@ export const IDL: SolCerberus = {
           },
           {
             "name": "Free"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CacheUpdated",
+      "docs": [
+        "CacheUpdated:",
+        "0 => Roles (When roles change)",
+        "1 => Rules   (When rules change)"
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Roles"
+          },
+          {
+            "name": "Rules"
           }
         ]
       }
