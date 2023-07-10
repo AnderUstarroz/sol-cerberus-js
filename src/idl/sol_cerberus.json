@@ -379,7 +379,22 @@
         {
           "name": "solCerberusApp",
           "isMut": false,
-          "isSigner": false
+          "isSigner": false,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "type": "string",
+                "value": "app"
+              },
+              {
+                "kind": "account",
+                "type": "publicKey",
+                "account": "App",
+                "path": "sol_cerberus_app.id"
+              }
+            ]
+          }
         },
         {
           "name": "solCerberusRole",
@@ -649,22 +664,18 @@
         {
           "name": "role",
           "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "solCerberusApp",
+          "isMut": false,
           "isSigner": false,
           "pda": {
             "seeds": [
               {
-                "kind": "account",
+                "kind": "const",
                 "type": "string",
-                "account": "Role",
-                "path": "role.role"
-              },
-              {
-                "kind": "account",
-                "type": {
-                  "option": "publicKey"
-                },
-                "account": "Role",
-                "path": "role.address"
+                "value": "app"
               },
               {
                 "kind": "account",
@@ -674,11 +685,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "solCerberusApp",
-          "isMut": false,
-          "isSigner": false
         },
         {
           "name": "solCerberusRole",
@@ -774,7 +780,7 @@
     {
       "name": "updateCache",
       "docs": [
-        "* Updates the app.updated_at field so clients\n     * can keep track and cache roles & rules."
+        "* Updates either app.roles_updated_at or app.rules_updated_at fields, so clients\n     * can keep track and cache roles & rules accordingly."
       ],
       "accounts": [
         {

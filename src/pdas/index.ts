@@ -33,18 +33,20 @@ export async function sc_rule_pda(
 }
 
 /**
- * Empty address is considered the wildcard "*" (applied to all users)
+ * Empty address "null" will be considered the wildcard "*" (applied to all users)
  */
 export async function sc_role_pda(
   appId: PublicKey,
   role: string,
-  address: PublicKey | null,
+  address: PublicKey | null | '*',
 ) {
   return (
     await PublicKey.findProgramAddressSync(
       [
         anchor.utils.bytes.utf8.encode(role),
-        address ? address.toBuffer() : anchor.utils.bytes.utf8.encode('*'),
+        !address || address === '*'
+          ? anchor.utils.bytes.utf8.encode('*')
+          : address.toBuffer(),
         appId.toBuffer(),
       ],
       SOL_CERBERUS_PROGRAM_ID,
