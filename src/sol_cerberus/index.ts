@@ -1,5 +1,9 @@
 import {web3} from '@project-serum/anchor';
-import {PublicKey} from '@solana/web3.js';
+import {
+  PublicKey,
+  ConfirmOptions,
+  TransactionInstruction,
+} from '@solana/web3.js';
 import * as anchor from '@project-serum/anchor';
 import {
   sc_app_pda,
@@ -27,7 +31,7 @@ import {
   getDBConfig,
 } from '../db';
 import {IDBPDatabase} from 'idb';
-import {short_key} from '../utils';
+import {dateToRust, short_key} from '../utils';
 
 // @TODO Remove this hack, only used to get the BN type included on package (used by app.updated_at).
 export const BIG_NUMBER: BN = 0;
@@ -49,6 +53,10 @@ export enum rolesGroupedBy {
   Role,
   None,
 }
+export enum accountTypes {
+  Basic = 0,
+  Free = 1,
+}
 
 export enum cacheUpdated {
   Roles = 0,
@@ -61,6 +69,32 @@ export enum addressTypes {
   Collection = 'collection',
 }
 
+export interface AssignRoleOptionsType {
+  expiresAt?: Date | null;
+  getIx?: boolean;
+  confirmOptions?: ConfirmOptions;
+}
+
+export interface DeleteAssignedRoleOptionsType
+  extends Omit<AssignRoleOptionsType, 'expiresAt'> {
+  collector?: PublicKey;
+}
+
+export interface AddRuleOptionsType extends AssignRoleOptionsType {}
+
+export interface DeleteRuleOptionsType
+  extends Omit<AssignRoleOptionsType, 'expiresAt'> {
+  collector?: PublicKey;
+}
+
+export interface FetchPermsOptionsType {
+  useCache?: boolean;
+}
+
+export interface AssignedRolesOptsType {
+  useCache?: boolean;
+  groupBy?: rolesGroupedBy;
+}
 export interface PermsType {
   [perm: string]: {
     expiresAt: number | null;
@@ -126,14 +160,22 @@ export interface AccountsType {
   solCerberusSeed: PublicKey | null;
   solCerberus: PublicKey;
 }
-export interface ConfigType {
+
+export interface DefaultAccountsType extends Partial<AccountsType> {}
+
+export interface AccountsOptionsType {
+  namespace?: namespaces;
+  defaultAccounts?: DefaultAccountsType;
+  useCPI?: boolean;
+}
+export interface SolCerberusOptionsType {
   appChangedCallback?: Function;
   rulesChangedCallback?: Function;
   rolesChangedCallback?: Function;
   permsAutoUpdate?: boolean;
 }
 
-export interface LoginConfig {
+export interface LoginOptionsType {
   collectionAddress?: PublicKey;
   wildcard?: boolean;
   useCache?: boolean;
@@ -168,7 +210,7 @@ export class SolCerberus {
   constructor(
     appId: PublicKey,
     provider: anchor.Provider,
-    config: ConfigType = {},
+    options: SolCerberusOptionsType = {},
   ) {
     this.#appId = appId;
     this.#program = new anchor.Program(
@@ -177,11 +219,11 @@ export class SolCerberus {
       provider,
     );
     this.#wallet = provider.publicKey as PublicKey;
-    this.#appListener = this.listenAppEvents(config);
-    this.#rulesListener = this.listenRulesEvents(config);
-    this.#rolesListener = this.listenRolesEvents(config);
-    if (config.hasOwnProperty('permsAutoUpdate')) {
-      this.#permsAutoUpdate = !!config.permsAutoUpdate;
+    this.#appListener = this.listenAppEvents(options);
+    this.#rulesListener = this.listenRulesEvents(options);
+    this.#rolesListener = this.listenRolesEvents(options);
+    if (options.hasOwnProperty('permsAutoUpdate')) {
+      this.#permsAutoUpdate = !!options.permsAutoUpdate;
     }
   }
 
@@ -189,7 +231,7 @@ export class SolCerberus {
    * Subscribes to Sol Cerberus App updates to refresh the app data
    * whenever the APP has been updated.
    */
-  listenAppEvents(config: ConfigType) {
+  listenAppEvents(config: SolCerberusOptionsType) {
     return this.#program.addEventListener('AppChanged', async (event, slot) => {
       if (event.appId.toBase58() === this.appId.toBase58()) {
         console.log('Refreshing APP DATA..');
@@ -208,7 +250,7 @@ export class SolCerberus {
   /**
    * Subscribes to Sol Cerberus Rules updates to refresh permissions
    */
-  listenRulesEvents(config: ConfigType) {
+  listenRulesEvents(config: SolCerberusOptionsType) {
     return config.rulesChangedCallback
       ? this.#program.addEventListener('RulesChanged', async (event, slot) => {
           if (event.appId.toBase58() === this.appId.toBase58()) {
@@ -222,7 +264,7 @@ export class SolCerberus {
   /**
    * Subscribes to Sol Cerberus Role assignation updates (only when a callback is defined)
    */
-  listenRolesEvents(config: ConfigType) {
+  listenRolesEvents(config: SolCerberusOptionsType) {
     return config.rolesChangedCallback
       ? this.#program.addEventListener('RolesChanged', async (event, slot) => {
           if (event.appId.toBase58() === this.appId.toBase58()) {
@@ -331,15 +373,13 @@ export class SolCerberus {
    * Returns True if the rule is allowed for at least one of the provided roles.
    */
   hasPerm(
-    roles: AddressByRoleType,
     resource: string,
     permission: string,
     namespace: number = namespaces.Rule,
   ) {
-    return this.appData &&
-      this.appData.authority.toBase58() === this.wallet.toBase58()
+    return this.appData && this.isAuthority()
       ? true // Authority always has full access
-      : !!this.findRule(roles, resource, permission, namespace);
+      : !!this.findRule(this.assignedRoles, resource, permission, namespace);
   }
 
   hasRule(
@@ -348,10 +388,11 @@ export class SolCerberus {
     permission: string,
     namespace: number = namespaces.Rule,
   ): boolean {
+    const now = new Date().getTime();
     try {
       //@ts-ignore
       let perm = this.permissions[namespace][role][resource][permission];
-      if (!perm.expiresAt || perm.expiresAt > new Date().getTime()) {
+      if (!perm.expiresAt || perm.expiresAt > now) {
         return true;
       }
     } catch (e) {}
@@ -362,10 +403,11 @@ export class SolCerberus {
    * Returns the first valid (not expired) assigned address
    */
   validAssignedAddress(addresses: AssignedAddressType): string | null {
+    const now = new Date().getTime();
     for (const address in addresses) {
       if (
         !addresses[address].expiresAt ||
-        (addresses[address].expiresAt as number) > new Date().getTime()
+        (addresses[address].expiresAt as number) > now
       ) {
         return address;
       }
@@ -422,7 +464,7 @@ export class SolCerberus {
    * Fetches the roles assigned to the provided address
    *
    * @param address The Public key used for authentication
-   * @param config Defines the login options:
+   * @param options Defines the login options:
    *  - collectionAddress: The address of the Collection (only required when login via NFT Collection address)
    *  - wildcard: Fetches the roles associated to all wallets via wildcard "*"
    *
@@ -430,20 +472,20 @@ export class SolCerberus {
    */
   async login(
     address: PublicKey | null,
-    config: LoginConfig = {},
+    options: LoginOptionsType = {},
   ): Promise<AddressByRoleType> {
-    config = {wildcard: true, useCache: true, ...config};
+    options = {wildcard: true, useCache: true, ...options};
     let addresses: (PublicKey | null)[] = [address];
     // Login via address (Wallet or NFT)
     if (address) {
       // Fetch Roles assigned to all addresses (when using wildcard "*")
-      if (config.wildcard) {
+      if (options.wildcard) {
         addresses.push(null);
       }
       // Login via NFT
       if (address.toBase58() !== this.wallet.toBase58()) {
         // Collection is mandatory when login via NFT
-        if (!config.collectionAddress) {
+        if (!options.collectionAddress) {
           throw new Error(
             `${short_key(address)} is missing the collection address! ` +
               'To login via NFT please provide both the NFT mint and the collection address, e.g: sc.login(MY_NFT_PUBKEY, {collectionAddress: NFT_COLLECTION_PUBKEY})',
@@ -453,9 +495,9 @@ export class SolCerberus {
         addresses.push(this.wallet);
         // Add Collection address
         this.setCollectionsMints({
-          [config.collectionAddress.toBase58()]: address.toBase58(),
+          [options.collectionAddress.toBase58()]: address.toBase58(),
         }); // Add collection Mint
-        addresses.push(config.collectionAddress);
+        addresses.push(options.collectionAddress);
       }
 
       // Login via wildcard "*"
@@ -464,26 +506,25 @@ export class SolCerberus {
       addresses.push(this.wallet);
     }
 
-    this.addAssignedRoles(
-      (await this.filterAssignedRoles(
-        addresses,
-        config.useCache,
-        rolesGroupedBy.None,
-      )) as RoleType[][],
+    this.setAssignedRoles(
+      (await this.filterAssignedRoles(addresses, {
+        useCache: options.useCache,
+        groupBy: rolesGroupedBy.None,
+      })) as RoleType[][],
     );
     return this.assignedRoles;
   }
 
   /**
-   * Add login roles to the assigned roles.
+   * Set the assigned roles within the instance.
    *
    * @param newRoles List containing the list of roles corresponding to the provided addresses
    */
-  addAssignedRoles = (newRoles: RoleType[][]) => {
-    newRoles.map(roles =>
-      roles.map(row => {
-        if (!this.#assignedRoles[row.role]) {
-          this.#assignedRoles[row.role] = {};
+  setAssignedRoles = (newRoles: RoleType[][]) => {
+    this.#assignedRoles = newRoles.reduce((assignedRoles, roles) => {
+      for (let row of roles) {
+        if (!assignedRoles[row.role]) {
+          assignedRoles[row.role] = {};
         }
         let nftMint = null;
         if (row.addressType === addressTypes.Collection) {
@@ -495,13 +536,14 @@ export class SolCerberus {
           }
           nftMint = new PublicKey(this.#collectionsMints[row.address]);
         }
-        this.#assignedRoles[row.role][row.address] = {
+        assignedRoles[row.role][row.address] = {
           addressType: row.addressType,
           nftMint: nftMint,
           expiresAt: row.expiresAt,
         };
-      }),
-    );
+      }
+      return assignedRoles;
+    }, {} as AddressByRoleType);
   };
 
   /**
@@ -537,9 +579,9 @@ export class SolCerberus {
    */
   async filterAssignedRoles(
     accountsFilters: (PublicKey | null)[],
-    useCache: boolean = true,
-    groupBy: rolesGroupedBy = rolesGroupedBy.Address,
+    options: AssignedRolesOptsType,
   ): Promise<RolesByAddressType[] | RoleType[][]> {
+    options = {useCache: true, groupBy: rolesGroupedBy.Address, ...options};
     return (
       await Promise.allSettled(
         accountsFilters.map((address: PublicKey | null) =>
@@ -552,8 +594,10 @@ export class SolCerberus {
                 },
               },
             ],
-            useCache,
-            groupBy,
+            {
+              useCache: options.useCache,
+              groupBy: options.groupBy,
+            },
           ),
         ),
       )
@@ -596,24 +640,25 @@ export class SolCerberus {
    * @param accountsFilters Program accounts filters: https://solanacookbook.com/guides/get-program-accounts.html#deep-dive
    * @param useCache Defines if cached should be used or not
    * @param groupByAddress When True returns roles grouped by address, otherwise returns addresses grouped by Roles.
-   *
+   * @returns Roles (format depends on the options.groupBy used)
    */
   async fetchAssignedRoles(
     accountsFilters: RoleAccountFilterType[] = [],
-    useCache: boolean = true,
-    groupBy: rolesGroupedBy = rolesGroupedBy.Address,
+    options: AssignedRolesOptsType = {},
   ): Promise<RolesByAddressType | AddressByRoleType | RoleType[]> {
+    options = {useCache: true, groupBy: rolesGroupedBy.Address, ...options};
     const appData = await this.getAppData();
     const cachedAddresses = this.cachedAddresses(accountsFilters);
+    console.log('cached addresses', cachedAddresses);
     let cached = appData?.cached
       ? await this.cachedRoles(
           cachedAddresses,
           appData.rolesUpdatedAt.toNumber(),
-          groupBy,
+          options.groupBy,
         )
       : null;
     console.log('CACHED ROLES:', cached);
-    if (!useCache || !cached) {
+    if (!options.useCache || !cached) {
       let fetched = this.parseRoles(
         await this.#program.account.role.all([
           {
@@ -626,7 +671,7 @@ export class SolCerberus {
         ]),
       );
       console.log('FETCHED FROM SOLANA:\n', fetched);
-      cached = this.groupRoles(fetched, groupBy);
+      cached = this.groupRoles(fetched, options.groupBy);
       if (this.useCache()) {
         // Include not found addresses to avoid repeating Solana requests in the future.
         if (cachedAddresses.length) {
@@ -640,6 +685,17 @@ export class SolCerberus {
     }
     return cached;
   }
+
+  /**
+   * Fetches all roles
+   *
+   * @param options
+   * @returns Roles (format depends on the options.groupBy used)
+   */
+  fetchAllRoles = async (
+    options: AssignedRolesOptsType = {},
+  ): Promise<RolesByAddressType | AddressByRoleType | RoleType[]> =>
+    await this.fetchAssignedRoles([], options);
 
   includeNotFoundAddresses = async (
     cachedAddresses: string[],
@@ -663,6 +719,7 @@ export class SolCerberus {
     }
     return fetched;
   };
+
   /**
    *
    * @param fetchedRoles Fetched roles
@@ -738,10 +795,7 @@ export class SolCerberus {
       : parsedRoles;
   }
 
-  async defaultAccounts(
-    cpi: boolean,
-    namespace: namespaces = namespaces.Rule,
-  ): Promise<AccountsType> {
+  async getDefaultAccounts(useCPI: boolean): Promise<AccountsType> {
     let accs = {
       solCerberusApp: await this.getAppPda(), // Fetched
       solCerberusRole: null,
@@ -751,48 +805,62 @@ export class SolCerberus {
       solCerberusSeed: null,
     } as AccountsType;
     // Cross-Program Invocations (CPI) require Sol Cerberus program account.
-    if (cpi) {
+    if (useCPI) {
       accs.solCerberus = this.program.programId;
-    }
-    // Add/Delete Rules require an additional "solCerberusRule2" PDA
-    if (
-      namespace >= namespaces.AddRuleNSRole &&
-      namespace <= namespaces.DeleteRuleResourcePerm
-    ) {
-      accs.solCerberusRule2 = null;
     }
     return accs;
   }
 
   /**
-   * Generates the required PDAs to perform the provided transaction:
-   *    - solCerberusApp: app PDA,
-   *    - solCerberusRule: rule PDA,
-   *    - solCerberusRole: role PDA,
-   *    - solCerberusToken: tokenAccount PDA,
-   *    - solCerberusMetadata: Metaplex PDA,
-   *    - solCerberusSeed: Seed PDA,
-   *    - solCerberus: Program PDA,
+   * Generates the required account PDAs to perform the provided transaction.
    *
+   * @param resource The resource trying to
+   * @param permission The permission required to access the resource
+   * @param options special settings for fetching accounts: {
+   *    namespace?: Integer representing the kind of permission.
+   *    useCPI?: Boolean,
+   *    defaultAccounts?: Object containing already fetched accounts PDA (to avoid duplicating requests)
+   *  }
+   *
+   * @returns The fetched accounts {
+   *    solCerberusApp: app PDA,
+   *    solCerberusRule: rule PDA,
+   *    solCerberusRule2?: rule2 PDA, // Only for special permissions
+   *    solCerberusRole: role PDA,
+   *    solCerberusToken: tokenAccount PDA,
+   *    solCerberusMetadata: Metaplex PDA,
+   *    solCerberusSeed: Seed PDA,
+   *    solCerberus: Program PDA,
+   * }
    */
   async accounts(
-    roles: AddressByRoleType,
     resource: string,
     permission: string,
-    namespace: number = namespaces.Rule,
+    options: AccountsOptionsType = {},
   ): Promise<AccountsType> {
+    options = {namespace: namespaces.Rule, useCPI: true, ...options};
     await this.getPermissions(); // Ensures that APP and perms are fetched.
-    let defaultOutput = await this.defaultAccounts(true);
+    let defaultOutput = {
+      ...(await this.getDefaultAccounts(options.useCPI !== false)),
+      ...(options.defaultAccounts ?? {}),
+    };
+    console.log('Fetched accounts:', defaultOutput);
+    if (this.isAuthority()) return defaultOutput;
     try {
-      const rule = this.findRule(roles, resource, permission, namespace);
-      if (!rule || this.isAuthority()) {
-        return defaultOutput;
-      }
+      const rule = this.findRule(
+        this.assignedRoles,
+        resource,
+        permission,
+        options.namespace,
+      );
+      if (!rule) return defaultOutput;
       const [roleFound, resourceFound, PermissionFound, ns] = rule;
-      const validAddress = this.validAssignedAddress(roles[roleFound]);
+      const validAddress = this.validAssignedAddress(
+        this.assignedRoles[roleFound],
+      );
       if (validAddress) {
         return await this.fetchPdaAccounts(
-          roles,
+          this.assignedRoles,
           roleFound,
           resourceFound,
           PermissionFound,
@@ -821,27 +889,38 @@ export class SolCerberus {
   ): Promise<AccountsType> {
     let asyncFuncs = [];
     // Rule PDA fetcher
-    asyncFuncs.push(async () => [
-      'solCerberusRule',
-      sc_rule_pda(this.appId, role, resource, permission, namespace),
-    ]);
+    if (!defaultOutput.hasOwnProperty('solCerberusRule')) {
+      asyncFuncs.push(async () => [
+        'solCerberusRule',
+        sc_rule_pda(this.appId, role, resource, permission, namespace),
+      ]);
+    }
     // Role PDA fetcher
-    asyncFuncs.push(async () => [
-      'solCerberusRole',
-      sc_role_pda(this.appId, role, new PublicKey(assignedAddress)),
-    ]);
+    if (!defaultOutput.hasOwnProperty('solCerberusRole')) {
+      asyncFuncs.push(async () => [
+        'solCerberusRole',
+        sc_role_pda(this.appId, role, new PublicKey(assignedAddress)),
+      ]);
+    }
     // tokenAccount PDA fetcher
-    asyncFuncs.push(async () =>
-      this.getTokenAccount(roles[role][assignedAddress], assignedAddress),
-    );
+    if (!defaultOutput.hasOwnProperty('solCerberusToken')) {
+      asyncFuncs.push(async () =>
+        this.getTokenAccount(roles[role][assignedAddress], assignedAddress),
+      );
+    }
     // Metadata PDA fetcher (optional)
-    asyncFuncs.push(async () =>
-      this.getMetadataAccount(roles[role][assignedAddress]),
-    );
-
+    if (!defaultOutput.hasOwnProperty('solCerberusMetadata')) {
+      asyncFuncs.push(async () =>
+        this.getMetadataAccount(roles[role][assignedAddress]),
+      );
+    }
     // Seed PDA fetcher
-    asyncFuncs.push(async () => ['solCerberusSeed', sc_seed_pda(this.wallet)]);
-
+    if (!defaultOutput.hasOwnProperty('solCerberusSeed')) {
+      asyncFuncs.push(async () => [
+        'solCerberusSeed',
+        sc_seed_pda(this.wallet),
+      ]);
+    }
     (await Promise.allSettled(asyncFuncs.map(f => f()))).map(
       (pdaRequest: any) => {
         if (pdaRequest.status === 'fulfilled') {
@@ -917,14 +996,15 @@ export class SolCerberus {
   /*
    * Fetches Permissions from blockchain
    */
-  async fetchPerms(useCache: boolean = true) {
+  async fetchPerms(options: FetchPermsOptionsType = {}) {
+    options = {useCache: true, ...options};
     const appData = await this.getAppData();
     let cached = appData?.cached
       ? await this.cachedPerms(appData.rulesUpdatedAt.toNumber())
       : null;
     console.log('CACHED RULES:', cached);
     // Fetch perms only if they have been modified
-    if (!useCache || !cached) {
+    if (!options.useCache || !cached) {
       let fetched = await this.#program.account.rule.all([
         {
           memcmp: {
@@ -1106,7 +1186,7 @@ export class SolCerberus {
         }
       }
       // Either fetch specific Addresses or all of them:
-      let roles = keys
+      let roles = keys.length
         ? (
             await Promise.allSettled(
               keys.map((address: string) =>
@@ -1135,9 +1215,7 @@ export class SolCerberus {
       }
       // NotFound addresses must be filtered out
       if (keys.length) {
-        console.log('Roles without filter: ', roles);
         roles = roles.filter((r: RoleType) => r.role);
-        console.log('Roles after filter: ', roles);
       }
       return this.groupRoles(roles, groupBy);
     }
@@ -1172,5 +1250,231 @@ export class SolCerberus {
     if (this.#appListener !== null) {
       this.program.removeEventListener(this.#appListener);
     }
+  }
+
+  /**
+   * Assign a Role to the provided address or to all addresses ("*")
+   *
+   * @param role String representing the role to assign
+   * @param addressType Either 'wallet', 'nft' or 'collection'
+   * @param address The Solana address (or wildcard "*") to which the role is assigned. The wilcard "*" means that role will be applied to everyone.
+   * @param options Settings:  {
+   *      expiresAt: (number) The time at which the role won't be valid anymore
+   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions: The RPC confirm options:
+   *          {
+   *            skipPreflight?: boolean; // Disables transaction verification step
+   *            commitment?: Commitment; //  Desired commitment level
+   *            preflightCommitment?: Commitment; // Preflight commitment level
+   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *          }
+   *    }
+   */
+  async assignRole(
+    role: string,
+    addressType: addressTypes,
+    address: PublicKey | string,
+    options: AssignRoleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    options = {...{expiresAt: null, getIx: false}, ...options}; // Default options
+    const assignedAddress =
+      typeof address !== 'string'
+        ? address
+        : address === '*'
+        ? null
+        : new PublicKey(address);
+
+    const method = this.program.methods
+      .assignRole({
+        role: role,
+        addressType: {[addressType]: {}} as any,
+        address: assignedAddress,
+        expiresAt: options.expiresAt ? dateToRust(options.expiresAt) : null,
+      })
+      .accounts({
+        role: await sc_role_pda(this.appId, role, assignedAddress),
+        ...(await this.accounts(addressType, role, {
+          namespace: namespaces.AssignRole,
+          useCPI: false,
+        })),
+      });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
+   * Delete the Role assigned to the provided address or to wildcard "*" (all addresses)
+   *
+   * @param role String representing the role to assign
+   * @param addressType Either 'wallet', 'nft' or 'collection'
+   * @param address The Solana address (or wildcard "*") to which the role is assigned.
+   * @param options Settings:  {
+   *      expiresAt: (number) The time at which the role won't be valid anymore
+   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions: The RPC confirm options:
+   *          {
+   *            skipPreflight?: boolean; // Disables transaction verification step
+   *            commitment?: Commitment; //  Desired commitment level
+   *            preflightCommitment?: Commitment; // Preflight commitment level
+   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *          }
+   *    }
+   */
+  async deleteAssignedRole(
+    role: string,
+    addressType: addressTypes,
+    address: PublicKey | string,
+    options: DeleteAssignedRoleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    options = {...{getIx: false}, ...options}; // Default options
+    const assignedAddress =
+      typeof address !== 'string'
+        ? address
+        : address === '*'
+        ? null
+        : new PublicKey(address);
+    const method = this.program.methods.deleteAssignedRole().accounts({
+      role: await sc_role_pda(this.appId, role, assignedAddress),
+      collector: options.collector ?? this.wallet,
+      ...(await this.accounts(addressType, role, {
+        namespace: namespaces.DeleteAssignRole,
+        useCPI: false,
+      })),
+    });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
+   * Create new Rule/Permission
+   *
+   * @param role The role getting the permission
+   * @param resource The resource in which the permission will have effect
+   * @param permission The permission
+   * @param namespace Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
+   * @param options Settings: {
+   *      expiresAt: (number) The time at which the role won't be valid anymore
+   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions: The RPC confirm options:
+   *          {
+   *            skipPreflight?: boolean; // Disables transaction verification step
+   *            commitment?: Commitment; //  Desired commitment level
+   *            preflightCommitment?: Commitment; // Preflight commitment level
+   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *          }
+   *    }
+   */
+  async addRule(
+    role: string,
+    resource: string,
+    permission: string,
+    namespace: namespaces = namespaces.Rule,
+    options: AddRuleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    options = {...{expiresAt: null, getIx: false}, ...options}; // Default options
+    // Fetch accounts and RULE for NS and Role (verifies if current user is allowed to delete a rule using this Namespace and Role)
+    let {solCerberusRule, ...accounts} = await this.accounts(
+      namespace.toString(),
+      role,
+      {
+        namespace: namespaces.DeleteRuleNSRole,
+        useCPI: false,
+      },
+    );
+    // Fetch RULE for Resource and Permission (verifies if current user is allowed to delete a rule using this Resource and Permission)
+    let {solCerberusRule: solCerberusRule2} = await this.accounts(
+      resource,
+      role,
+      {
+        namespace: namespaces.DeleteRuleResourcePerm,
+        useCPI: false,
+        defaultAccounts: accounts, // Reuse fetched accounts
+      },
+    );
+    const method = this.program.methods
+      .addRule({
+        namespace: namespace,
+        role: role,
+        resource: resource,
+        permission: permission,
+        expiresAt: options.expiresAt ? dateToRust(options.expiresAt) : null,
+      })
+      .accounts({
+        rule: await sc_rule_pda(this.appId, role, resource, permission),
+        solCerberusRule: solCerberusRule,
+        solCerberusRule2: solCerberusRule2,
+        ...accounts,
+      });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
+   * Delete Rule/Permission
+   *
+   * @param role The role getting the permission
+   * @param resource The resource in which the permission will have effect
+   * @param permission The permission
+   * @param namespace Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
+   * @param options Settings: {
+   *      expiresAt: (number) The time at which the role won't be valid anymore
+   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions: The RPC confirm options:
+   *          {
+   *            skipPreflight?: boolean; // Disables transaction verification step
+   *            commitment?: Commitment; //  Desired commitment level
+   *            preflightCommitment?: Commitment; // Preflight commitment level
+   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *          }
+   *    }
+   */
+  async deleteRule(
+    role: string,
+    resource: string,
+    permission: string,
+    namespace: namespaces = namespaces.Rule,
+    options: DeleteRuleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    options = {...{expiresAt: null, getIx: false}, ...options}; // Default options
+    // Fetch accounts and RULE for NS and Role (verifies if current user is allowed to create a rule using this Namespace and Role)
+    let {solCerberusRule, ...accounts} = await this.accounts(
+      namespace.toString(),
+      role,
+      {
+        namespace: namespaces.AddRuleNSRole,
+        useCPI: false,
+      },
+    );
+    // Fetch RULE for Resource and Permission (verifies if current user is allowed to create a rule using this Resource and Permission)
+    let {solCerberusRule: solCerberusRule2} = await this.accounts(
+      resource,
+      role,
+      {
+        namespace: namespaces.AddRuleResourcePerm,
+        useCPI: false,
+        defaultAccounts: accounts, // Reuse fetched accounts
+      },
+    );
+    const method = this.program.methods.deleteRule().accounts({
+      rule: await sc_rule_pda(this.appId, role, resource, permission),
+      solCerberusRule: solCerberusRule,
+      solCerberusRule2: solCerberusRule2,
+      collector: options.collector ?? this.wallet,
+      ...accounts,
+    });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
   }
 }

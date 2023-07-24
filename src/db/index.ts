@@ -29,15 +29,20 @@ export const get_db_name = (appId: string, type: DBType): string =>
 
 export type StoresType = typeof RULE_STORE | typeof ROLE_STORE;
 
+export const deleteObjectStores = (db: IDBPDatabase, stores: string[]) => {
+  let existingStores = Object.values(db.objectStoreNames);
+  stores.map(store => {
+    if (existingStores.includes(store)) {
+      db.deleteObjectStore(store);
+    }
+  });
+};
+
 export const getRoleDB = async (appId: string, version: number) =>
   await openDB(get_db_name(appId, 'Role'), version, {
     upgrade(db, _oldVersion, _newVersion, _transaction) {
       // Erase all previous data when using a new DB version
-      for (let store in [CONFIG_STORE, ROLE_STORE]) {
-        if (db.objectStoreNames.contains(store)) {
-          db.deleteObjectStore(store);
-        }
-      }
+      deleteObjectStores(db, [CONFIG_STORE, ROLE_STORE]);
       var configStore = db.createObjectStore(CONFIG_STORE);
       configStore.put({fullyFetched: false}, 'Settings');
 
@@ -59,9 +64,7 @@ export const getRuleDB = async (appId: string, version: number) =>
   await openDB(get_db_name(appId, 'Rule'), version, {
     upgrade(db, _oldVersion, _newVersion, _transaction) {
       // Erase all previous data when using a new DB version
-      if (db.objectStoreNames.contains(RULE_STORE)) {
-        db.deleteObjectStore(RULE_STORE);
-      }
+      deleteObjectStores(db, [RULE_STORE]);
       /**
        * Rule store contains:
        *  - namespace
