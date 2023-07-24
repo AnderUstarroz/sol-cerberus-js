@@ -996,7 +996,7 @@
             }
           },
           {
-            "name": "class",
+            "name": "accountType",
             "type": "u8"
           },
           {
@@ -1178,7 +1178,7 @@
             }
           },
           {
-            "name": "class",
+            "name": "accountType",
             "type": "u8"
           },
           {
@@ -1251,17 +1251,17 @@
       }
     },
     {
-      "name": "Classes",
+      "name": "AccountTypes",
       "docs": [
-        "Classes:",
-        "0 => Trial  (Apps with default fees)",
+        "AccountTypes:",
+        "0 => Basic  (Apps with default fees)",
         "1 => Free   (Apps with no fees)"
       ],
       "type": {
         "kind": "enum",
         "variants": [
           {
-            "name": "Trial"
+            "name": "Basic"
           },
           {
             "name": "Free"
