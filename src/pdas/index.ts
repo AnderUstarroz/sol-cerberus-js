@@ -2,7 +2,7 @@ import * as anchor from '@project-serum/anchor';
 import {PublicKey} from '@solana/web3.js';
 import {SOL_CERBERUS_PROGRAM_ID, METADATA_PROGRAM_ID} from '../constants';
 
-export async function sc_app_pda(appId: PublicKey) {
+export async function appPda(appId: PublicKey) {
   return (
     await PublicKey.findProgramAddressSync(
       [anchor.utils.bytes.utf8.encode('app'), appId.toBuffer()],
@@ -11,7 +11,7 @@ export async function sc_app_pda(appId: PublicKey) {
   )[0];
 }
 
-export async function sc_rule_pda(
+export async function rulePda(
   appId: PublicKey,
   role: string,
   resource: string,
@@ -35,7 +35,7 @@ export async function sc_rule_pda(
 /**
  * Empty address "null" will be considered the wildcard "*" (applied to all users)
  */
-export async function sc_role_pda(
+export async function rolePda(
   appId: PublicKey,
   role: string,
   address: PublicKey | null | '*',
@@ -54,7 +54,7 @@ export async function sc_role_pda(
   )[0];
 }
 
-export async function sc_seed_pda(signer: PublicKey) {
+export async function seedPda(signer: PublicKey) {
   return (
     await PublicKey.findProgramAddressSync(
       [anchor.utils.bytes.utf8.encode('seed'), signer.toBuffer()],
@@ -63,7 +63,7 @@ export async function sc_seed_pda(signer: PublicKey) {
   )[0];
 }
 
-export async function nft_metadata_pda(mint: PublicKey) {
+export async function nftMetadataPda(mint: PublicKey) {
   return (
     await PublicKey.findProgramAddressSync(
       [

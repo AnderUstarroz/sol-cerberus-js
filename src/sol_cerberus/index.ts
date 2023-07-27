@@ -1,17 +1,13 @@
 import {web3} from '@project-serum/anchor';
 import {
+  Keypair,
   PublicKey,
+  Connection,
   ConfirmOptions,
   TransactionInstruction,
 } from '@solana/web3.js';
 import * as anchor from '@project-serum/anchor';
-import {
-  sc_app_pda,
-  sc_rule_pda,
-  sc_role_pda,
-  nft_metadata_pda,
-  sc_seed_pda,
-} from '../pdas';
+import {appPda, rulePda, rolePda, nftMetadataPda, seedPda} from '../pdas';
 import {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
 import {SOL_CERBERUS_PROGRAM_ID} from '../constants';
 import SolCerberusIDL from '../idl/sol_cerberus.json';
@@ -21,7 +17,7 @@ import {
   getRoleDB,
   getRuleDB,
   RULE_STORE,
-  bulk_insert,
+  bulkInsert,
   ROLE_STORE,
   fetchAll,
   dbExists,
@@ -69,6 +65,22 @@ export enum addressTypes {
   Collection = 'collection',
 }
 
+export interface InitializeAppOptionsType {
+  cached?: boolean;
+  getIx?: boolean;
+  confirmOptions?: ConfirmOptions;
+}
+
+export interface UpdateAppOptionsType
+  extends Omit<InitializeAppOptionsType, 'appId'> {
+  authority?: PublicKey;
+}
+
+export interface DeleteAppOptionsType
+  extends Omit<InitializeAppOptionsType, 'cached'> {
+  collector?: PublicKey;
+}
+
 export interface AssignRoleOptionsType {
   expiresAt?: Date | null;
   getIx?: boolean;
@@ -80,10 +92,13 @@ export interface DeleteAssignedRoleOptionsType
   collector?: PublicKey;
 }
 
-export interface AddRuleOptionsType extends AssignRoleOptionsType {}
+export interface AddRuleOptionsType extends AssignRoleOptionsType {
+  namespace?: namespaces;
+}
 
 export interface DeleteRuleOptionsType
   extends Omit<AssignRoleOptionsType, 'expiresAt'> {
+  namespace?: namespaces;
   collector?: PublicKey;
 }
 
@@ -119,7 +134,7 @@ export interface RolesType {
 }
 
 export interface CollectionsMintsType {
-  [collectionAddress: string]: string;
+  [collectionAddress: string]: PublicKey[];
 }
 export interface CachedPermsType {
   [namespace: number]: RolesType;
@@ -127,7 +142,7 @@ export interface CachedPermsType {
 
 export interface AssignedRoleObjectType {
   addressType: AddressTypeType;
-  nftMint: PublicKey | null;
+  nftMints?: PublicKey[];
   expiresAt: number | null;
 }
 export interface AssignedRolesType {
@@ -169,19 +184,40 @@ export interface AccountsOptionsType {
   useCPI?: boolean;
 }
 export interface SolCerberusOptionsType {
+  appId?: PublicKey;
   appChangedCallback?: Function;
   rulesChangedCallback?: Function;
   rolesChangedCallback?: Function;
   permsAutoUpdate?: boolean;
+  confirmOptions?: ConfirmOptions;
 }
 
+export type NFTAddressType = PublicKey;
+export type CollectionAddressType = PublicKey;
 export interface LoginOptionsType {
-  collectionAddress?: PublicKey;
+  nfts?: [NFTAddressType, CollectionAddressType][];
   wildcard?: boolean;
   useCache?: boolean;
 }
 
-export const new_sc_app = (): PublicKey => web3.Keypair.generate().publicKey;
+export const newApp = (): PublicKey => web3.Keypair.generate().publicKey;
+
+/**
+ * Creates the Connection provider
+ *
+ * @param connection JSON RPC Connection
+ * @param wallet The wallet used to pay for and sign all transactions.
+ */
+export function getProvider(
+  connection: Connection,
+  wallet: any,
+  options: ConfirmOptions = {},
+): anchor.Provider {
+  return new anchor.AnchorProvider(connection, wallet.adapter ?? wallet, {
+    ...anchor.AnchorProvider.defaultOptions(),
+    ...options,
+  });
+}
 
 export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
@@ -204,15 +240,32 @@ export class SolCerberus {
   /**
    * Creates Sol Cerberus client
    *
-   * @param #appId The Public key of the Sol Cerberus APP ID
-   * @param #provider Connection provider
+   * @param provider Connection provider
+   * @param options Sol Cerberus config options:
+   * ```
+   * {
+   *    appId: PublicKey // The ID identifying the Sol Cerberus APP (if empty a random one will be created)
+   *    appChangedCallback?: Function // will be called whenever the app has changed
+   *    rulesChangedCallback?: Function // will be called whenever a rule has changed
+   *    rolesChangedCallback?: Function // will be called whenever a role has changed
+   *    permsAutoUpdate?: boolean // Defines if the permissions (rules) should be automatically fetched when they change.
+   *    confirmOptions: { //The RPC confirm options:
+   *        skipPreflight?: boolean; // Disables transaction verification step
+   *        commitment?: Commitment; //  Desired commitment level
+   *        preflightCommitment?: Commitment; // Preflight commitment level
+   *        maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *        minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *    }
+   * }
+   * ```
    */
   constructor(
-    appId: PublicKey,
-    provider: anchor.Provider,
+    connection: Connection,
+    wallet: any,
     options: SolCerberusOptionsType = {},
   ) {
-    this.#appId = appId;
+    const provider = getProvider(connection, wallet);
+    this.#appId = options.appId ?? Keypair.generate().publicKey;
     this.#program = new anchor.Program(
       SolCerberusIDL as any,
       SOL_CERBERUS_PROGRAM_ID,
@@ -235,9 +288,9 @@ export class SolCerberus {
     return this.#program.addEventListener('AppChanged', async (event, slot) => {
       if (event.appId.toBase58() === this.appId.toBase58()) {
         console.log('Refreshing APP DATA..');
-        this.fetchAppData(); // Refresh APP data
+        await this.fetchAppData(); // Refresh APP data
         if (this.#permsAutoUpdate && this.rulesHaveChanged()) {
-          this.fetchPerms();
+          await this.fetchPerms();
         }
         if (config.hasOwnProperty('appChangedCallback')) {
           //@ts-ignore
@@ -276,7 +329,7 @@ export class SolCerberus {
   }
 
   async fetchAppPda(): Promise<PublicKey> {
-    this.#appPda = await sc_app_pda(this.#appId);
+    this.#appPda = await appPda(this.#appId);
     return this.#appPda;
   }
 
@@ -448,7 +501,7 @@ export class SolCerberus {
       if (!rule) {
         return null;
       }
-      return await sc_rule_pda(this.appId, ...rule);
+      return await rulePda(this.appId, ...rule);
     } catch (e) {}
 
     return null;
@@ -463,47 +516,40 @@ export class SolCerberus {
   /**
    * Fetches the roles assigned to the provided address
    *
-   * @param address The Public key used for authentication
+   * @param wallet The Public key used for authentication
    * @param options Defines the login options:
-   *  - collectionAddress: The address of the Collection (only required when login via NFT Collection address)
-   *  - wildcard: Fetches the roles associated to all wallets via wildcard "*"
-   *
+   * ```
+   * {
+   *    nfts: [[NFTAddressType, CollectionAddressType], ..] // List containing pairs of NFT mint and his corresponding Collection address.
+   *    collectionAddress: PublicKey // The address of the Collection (only required when login via NFT Collection address)
+   *    wildcard: boolean // Fetches or not the roles associated to all wallets via wildcard "*"
+   * }
+   * ```
    * @returns
    */
   async login(
-    address: PublicKey | null,
+    wallet: PublicKey,
     options: LoginOptionsType = {},
   ): Promise<AddressByRoleType> {
-    options = {wildcard: true, useCache: true, ...options};
-    let addresses: (PublicKey | null)[] = [address];
-    // Login via address (Wallet or NFT)
-    if (address) {
-      // Fetch Roles assigned to all addresses (when using wildcard "*")
-      if (options.wildcard) {
-        addresses.push(null);
-      }
-      // Login via NFT
-      if (address.toBase58() !== this.wallet.toBase58()) {
-        // Collection is mandatory when login via NFT
-        if (!options.collectionAddress) {
-          throw new Error(
-            `${short_key(address)} is missing the collection address! ` +
-              'To login via NFT please provide both the NFT mint and the collection address, e.g: sc.login(MY_NFT_PUBKEY, {collectionAddress: NFT_COLLECTION_PUBKEY})',
-          );
-        }
-        // Add wallet address
-        addresses.push(this.wallet);
+    options = {nfts: [], wildcard: true, useCache: true, ...options};
+    let addresses: (PublicKey | null)[] = [wallet];
+    // Fetch Roles assigned to all addresses (when using wildcard "*")
+    if (options.wildcard) {
+      addresses.push(null);
+    }
+    if (options.nfts?.length) {
+      options.nfts.map(([nftAddress, collectionAddress]) => {
+        // Add NFT address
+        addresses.push(nftAddress);
         // Add Collection address
-        this.setCollectionsMints({
-          [options.collectionAddress.toBase58()]: address.toBase58(),
-        }); // Add collection Mint
-        addresses.push(options.collectionAddress);
-      }
-
-      // Login via wildcard "*"
-    } else {
-      // Add the wallet address
-      addresses.push(this.wallet);
+        addresses.push(collectionAddress);
+        // Create collection mint address if not exists:
+        if (!this.#collectionsMints[collectionAddress.toBase58()]) {
+          this.#collectionsMints[collectionAddress.toBase58()] = [];
+        }
+        // Add corresponding nft mint addresses to the collection
+        this.#collectionsMints[collectionAddress.toBase58()].push(nftAddress);
+      });
     }
 
     this.setAssignedRoles(
@@ -526,41 +572,24 @@ export class SolCerberus {
         if (!assignedRoles[row.role]) {
           assignedRoles[row.role] = {};
         }
-        let nftMint = null;
+        assignedRoles[row.role][row.address] = {
+          addressType: row.addressType,
+          expiresAt: row.expiresAt,
+        };
         if (row.addressType === addressTypes.Collection) {
           if (!this.#collectionsMints[row.address]) {
             throw new Error(
               `${short_key(row.address)} is a collection address! ` +
-                'To login using a NFT collection address provide both the NFT mint and the collection address, e.g: sc.login(MY_NFT_MINT, {collectionAddress: NFT_COLLECTION_MINT})',
+                'To login using a NFT collection address provide both the NFT mint and the collection address, e.g: sc.login(MY_WALLET, {nfts: [[MY_NFT_MINT, NFT_COLLECTION_MINT], ...]})',
             );
           }
-          nftMint = new PublicKey(this.#collectionsMints[row.address]);
+          assignedRoles[row.role][row.address].nftMints =
+            this.#collectionsMints[row.address];
         }
-        assignedRoles[row.role][row.address] = {
-          addressType: row.addressType,
-          nftMint: nftMint,
-          expiresAt: row.expiresAt,
-        };
       }
       return assignedRoles;
     }, {} as AddressByRoleType);
   };
-
-  /**
-   * Sets the Collections mints
-   *
-   * @param collectionsMints Collection addresses as keys, Mint addresses as values
-   *  E.G:
-   *    {
-   *      "FriELggez2Dy3phZeHHAdpcoEXkKQVkv6tx3zDtCVP8T": "BUGuuhPsHpk8YZrL2GctsCtXGneL1gmT5zYb7eMHZDWf",
-   *      ...
-   *    }
-   *
-   */
-  setCollectionsMints = (collectionsMints: CollectionsMintsType) =>
-    Object.entries(collectionsMints).map(
-      ([collection, mint]) => (this.#collectionsMints[collection] = mint),
-    );
 
   /**
    * Clear all assigned roles added with the login() method.
@@ -608,14 +637,14 @@ export class SolCerberus {
 
   /**
    * Parses Roles into IDB rows with the following format:
-   *
+   * ```
    * {
    *    role: 'TriangleMaster',
    *    address: '*',
    *    addressType: 'wallet',
    *    expiresAt: 1689033410616  // Time in milliseconds
    * }
-   *
+   * ```
    *
    * @param fetchedRoles Roles accounts fetched from Solana
    * @returns
@@ -730,16 +759,18 @@ export class SolCerberus {
       if (!result[role.role]) {
         result[role.role] = {};
       }
-      const nftMint =
-        role.addressType === addressTypes.Collection &&
-        this.#collectionsMints[role.address]
-          ? new PublicKey(this.#collectionsMints[role.address])
-          : null;
       result[role.role][role.address] = {
         addressType: role.addressType,
-        nftMint: nftMint,
         expiresAt: role.expiresAt,
       };
+      // Add collection mint
+      if (
+        role.addressType === addressTypes.Collection &&
+        this.#collectionsMints[role.address]
+      ) {
+        result[role.role][role.address].nftMints =
+          this.#collectionsMints[role.address];
+      }
 
       return result;
     }, {} as RolesByAddressType);
@@ -748,35 +779,38 @@ export class SolCerberus {
    *
    * @param fetchedRoles Fetched roles
    * @returns Roles grouped by address, E.G:
-   *
+   * ```
    * {
    *    Ak94...2Uat: {
    *      role1:  {
    *        addressType: "nft"
-   *        nftMint: null
+   *        nftMints?: [PublicKey, PublicKey, ..]
    *        expiresAt: 103990020
    *      },
    *      role2:  {...}
    *    },
    *    ekB12...tR38: {...}
    * }
-   *
+   * ```
    */
   groupByAddress = (fetchedRoles: RoleType[]): RolesByAddressType =>
     fetchedRoles.reduce((result, role) => {
       if (!result.hasOwnProperty(role.address)) {
         result[role.address] = {};
       }
-      const nftMint =
-        role.addressType === addressTypes.Collection &&
-        this.#collectionsMints[role.address]
-          ? new PublicKey(this.#collectionsMints[role.address])
-          : null;
       result[role.address][role.role] = {
         addressType: role.addressType,
-        nftMint: nftMint,
         expiresAt: role.expiresAt,
       };
+      // Add NFTMint for collections
+      if (
+        role.addressType === addressTypes.Collection &&
+        this.#collectionsMints[role.address]
+      ) {
+        result[role.address][role.role].nftMints =
+          this.#collectionsMints[role.address];
+      }
+
       return result;
     }, {} as RolesByAddressType);
 
@@ -822,16 +856,18 @@ export class SolCerberus {
    *    defaultAccounts?: Object containing already fetched accounts PDA (to avoid duplicating requests)
    *  }
    *
-   * @returns The fetched accounts {
+   * @returns The fetched accounts, for instance:
+   * ```
+   * {
    *    solCerberusApp: app PDA,
    *    solCerberusRule: rule PDA,
-   *    solCerberusRule2?: rule2 PDA, // Only for special permissions
    *    solCerberusRole: role PDA,
    *    solCerberusToken: tokenAccount PDA,
    *    solCerberusMetadata: Metaplex PDA,
    *    solCerberusSeed: Seed PDA,
    *    solCerberus: Program PDA,
    * }
+   * ```
    */
   async accounts(
     resource: string,
@@ -892,14 +928,14 @@ export class SolCerberus {
     if (!defaultOutput.hasOwnProperty('solCerberusRule')) {
       asyncFuncs.push(async () => [
         'solCerberusRule',
-        sc_rule_pda(this.appId, role, resource, permission, namespace),
+        rulePda(this.appId, role, resource, permission, namespace),
       ]);
     }
     // Role PDA fetcher
     if (!defaultOutput.hasOwnProperty('solCerberusRole')) {
       asyncFuncs.push(async () => [
         'solCerberusRole',
-        sc_role_pda(this.appId, role, new PublicKey(assignedAddress)),
+        rolePda(this.appId, role, new PublicKey(assignedAddress)),
       ]);
     }
     // tokenAccount PDA fetcher
@@ -916,10 +952,7 @@ export class SolCerberus {
     }
     // Seed PDA fetcher
     if (!defaultOutput.hasOwnProperty('solCerberusSeed')) {
-      asyncFuncs.push(async () => [
-        'solCerberusSeed',
-        sc_seed_pda(this.wallet),
-      ]);
+      asyncFuncs.push(async () => ['solCerberusSeed', seedPda(this.wallet)]);
     }
     (await Promise.allSettled(asyncFuncs.map(f => f()))).map(
       (pdaRequest: any) => {
@@ -945,14 +978,14 @@ export class SolCerberus {
         this.wallet,
       );
     } else if (assignedRole.addressType === 'collection') {
-      if (!assignedRole.nftMint) {
+      if (!assignedRole.nftMints) {
         throw new Error(
-          `Missing NFT Mint address for collection: "${assignedAddress}"`,
+          `Missing NFT Mint addresses for collection: "${assignedAddress}"`,
         );
       }
       return [
         'solCerberusToken',
-        getAssociatedTokenAddress(assignedRole.nftMint, this.wallet),
+        getAssociatedTokenAddress(assignedRole.nftMints[0], this.wallet),
       ];
     }
     return ['solCerberusToken', null];
@@ -986,8 +1019,8 @@ export class SolCerberus {
   async getMetadataAccount(assignedRole: AssignedRoleObjectType) {
     if (assignedRole.addressType === 'collection') {
       return [
-        'solCerberusMetadata',
-        nft_metadata_pda(assignedRole.nftMint as PublicKey),
+        'solCerberusMetadata', // @ts-ignore
+        nftMetadataPda(assignedRole.nftMints[0] as PublicKey),
       ];
     }
     return ['solCerberusMetadata', null];
@@ -995,6 +1028,14 @@ export class SolCerberus {
 
   /*
    * Fetches Permissions from blockchain
+   *
+   * @param options: Additional parameters to customize behavior:
+   *
+   * ```
+   * {
+   *   useCache: boolean // Wether the rules must be fetched from cache or not.
+   * }
+   * ```
    */
   async fetchPerms(options: FetchPermsOptionsType = {}) {
     options = {useCache: true, ...options};
@@ -1024,7 +1065,7 @@ export class SolCerberus {
 
   /**
    * Parse Permissions into following mapped format:
-   *
+   *```
    * {
    *    0: {
    *      role1:  {
@@ -1039,6 +1080,7 @@ export class SolCerberus {
    *    },
    *    1: {...}
    * }
+   * ```
    */
   parsePerms(
     fetchedPerms: anchor.ProgramAccount<
@@ -1096,7 +1138,7 @@ export class SolCerberus {
     >[],
   ) {
     console.log('Storing perms:', fetchedPerms);
-    bulk_insert(
+    bulkInsert(
       this.ruleDB as IDBPDatabase<unknown>,
       RULE_STORE,
       fetchedPerms.map(item => ({
@@ -1151,7 +1193,7 @@ export class SolCerberus {
         fullyFetched: true,
       });
     }
-    bulk_insert(this.roleDB as IDBPDatabase<unknown>, ROLE_STORE, parsedRoles);
+    bulkInsert(this.roleDB as IDBPDatabase<unknown>, ROLE_STORE, parsedRoles);
   }
 
   isFullyFetched = async (
@@ -1238,9 +1280,9 @@ export class SolCerberus {
   }
 
   /**
-   * Cleanup resources;
+   * Disconnect websockets
    */
-  destroy() {
+  disconnect() {
     if (this.#rulesListener !== null) {
       this.program.removeEventListener(this.#rulesListener);
     }
@@ -1253,23 +1295,147 @@ export class SolCerberus {
   }
 
   /**
+   * Initializes a Sol Cerberus APP
+   *
+   * @param name Name to identify the APP
+   * @param recovery The backup wallet (null for none)
+   * @param options Settings:
+   * ```
+   * {
+   *    cached: boolean // Wether the Roles and Permissions should be cached on client side
+   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    confirmOptions: { //The RPC confirm options:
+   *          skipPreflight?: boolean; // Disables transaction verification step
+   *          commitment?: Commitment; //  Desired commitment level
+   *          preflightCommitment?: Commitment; // Preflight commitment level
+   *          maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *          minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *        }
+   *  }
+   * ```
+   */
+  async initializeApp(
+    name: string,
+    recovery: PublicKey | null = null,
+    options: InitializeAppOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    options = {cached: true, ...options};
+    const method = this.program.methods
+      .initializeApp({
+        id: this.appId,
+        name: name,
+        recovery: recovery,
+        cached: options.cached as boolean,
+      })
+      .accounts({
+        app: await this.getAppPda(),
+      });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
+   * Updates a Sol Cerberus APP
+   *
+   * @param name Name to identify the APP
+   * @param recovery The backup wallet (null for none)
+   * @param options Settings:
+   * ```
+   * {
+   *    authority: PublicKey // Updates the authority of the Sol Cerberus APP
+   *    cached: boolean // Wether the Roles and Permissions should be cached on client side
+   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    confirmOptions: { //The RPC confirm options:
+   *          skipPreflight?: boolean; // Disables transaction verification step
+   *          commitment?: Commitment; //  Desired commitment level
+   *          preflightCommitment?: Commitment; // Preflight commitment level
+   *          maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *          minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *        }
+   *  }
+   * ```
+   */
+  async updateApp(
+    name: string,
+    recovery: PublicKey | null = null,
+    options: UpdateAppOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    const app = await this.getAppData();
+    if (!app) {
+      throw new Error('Sol Cerberus App not found!');
+    }
+    const method = this.program.methods
+      .updateApp({
+        name: name,
+        authority: options.authority ?? app.authority,
+        recovery: recovery,
+        cached: options.cached ?? app.cached,
+        fee: app.fee,
+        accountType: app.accountType,
+        expiresAt: app.expiresAt,
+      })
+      .accounts({
+        app: await this.getAppPda(),
+      });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
+   * Delete Sol Cerberus APP
+   *
+   * @param options Settings:
+   * ```
+   * {
+   *    collector?: PublicKey // The wallet receiving the funds (defaults to authority)
+   *    getIx?: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    confirmOptions?: { //The RPC confirm options:
+   *          skipPreflight?: boolean; // Disables transaction verification step
+   *          commitment?: Commitment; //  Desired commitment level
+   *          preflightCommitment?: Commitment; // Preflight commitment level
+   *          maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *          minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *        }
+   *  }
+   * ```
+   */
+  async deleteApp(
+    options: DeleteAppOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    const method = this.program.methods.deleteApp().accounts({
+      app: await this.getAppPda(),
+      collector: options.collector ?? this.wallet,
+    });
+
+    return await (options.getIx
+      ? method.instruction()
+      : method.rpc(options.confirmOptions ?? undefined));
+  }
+
+  /**
    * Assign a Role to the provided address or to all addresses ("*")
    *
    * @param role String representing the role to assign
    * @param addressType Either 'wallet', 'nft' or 'collection'
    * @param address The Solana address (or wildcard "*") to which the role is assigned. The wilcard "*" means that role will be applied to everyone.
-   * @param options Settings:  {
-   *      expiresAt: (number) The time at which the role won't be valid anymore
-   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
-   *      confirmOptions: The RPC confirm options:
-   *          {
-   *            skipPreflight?: boolean; // Disables transaction verification step
-   *            commitment?: Commitment; //  Desired commitment level
-   *            preflightCommitment?: Commitment; // Preflight commitment level
-   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
-   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
-   *          }
-   *    }
+   * @param options Settings:
+   * ```
+   * {
+   *    expiresAt: Date //The time at which the role won't be valid anymore
+   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    confirmOptions: { //The RPC confirm options:
+   *          skipPreflight?: boolean; // Disables transaction verification step
+   *          commitment?: Commitment; //  Desired commitment level
+   *          preflightCommitment?: Commitment; // Preflight commitment level
+   *          maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *          minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *        }
+   *  }
+   * ```
    */
   async assignRole(
     role: string,
@@ -1293,7 +1459,7 @@ export class SolCerberus {
         expiresAt: options.expiresAt ? dateToRust(options.expiresAt) : null,
       })
       .accounts({
-        role: await sc_role_pda(this.appId, role, assignedAddress),
+        role: await rolePda(this.appId, role, assignedAddress),
         ...(await this.accounts(addressType, role, {
           namespace: namespaces.AssignRole,
           useCPI: false,
@@ -1308,21 +1474,23 @@ export class SolCerberus {
   /**
    * Delete the Role assigned to the provided address or to wildcard "*" (all addresses)
    *
-   * @param role String representing the role to assign
+   * @param role String: The role name.
    * @param addressType Either 'wallet', 'nft' or 'collection'
-   * @param address The Solana address (or wildcard "*") to which the role is assigned.
-   * @param options Settings:  {
-   *      expiresAt: (number) The time at which the role won't be valid anymore
-   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
-   *      confirmOptions: The RPC confirm options:
-   *          {
+   * @param address String | PubKey: The Solana address (or wildcard "*") to which the role is assigned.
+   * @param options Settings:
+   * ```
+   * {
+   *      collector?: PublicKey // The wallet receiving the funds (defaults to authority)
+   *      getIx?: boolean // Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions?: { // The RPC confirm options:
    *            skipPreflight?: boolean; // Disables transaction verification step
    *            commitment?: Commitment; //  Desired commitment level
    *            preflightCommitment?: Commitment; // Preflight commitment level
    *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
    *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
-   *          }
-   *    }
+   *      }
+   * }
+   * ```
    */
   async deleteAssignedRole(
     role: string,
@@ -1338,7 +1506,7 @@ export class SolCerberus {
         ? null
         : new PublicKey(address);
     const method = this.program.methods.deleteAssignedRole().accounts({
-      role: await sc_role_pda(this.appId, role, assignedAddress),
+      role: await rolePda(this.appId, role, assignedAddress),
       collector: options.collector ?? this.wallet,
       ...(await this.accounts(addressType, role, {
         namespace: namespaces.DeleteAssignRole,
@@ -1357,12 +1525,13 @@ export class SolCerberus {
    * @param role The role getting the permission
    * @param resource The resource in which the permission will have effect
    * @param permission The permission
-   * @param namespace Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
-   * @param options Settings: {
-   *      expiresAt: (number) The time at which the role won't be valid anymore
-   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
-   *      confirmOptions: The RPC confirm options:
-   *          {
+   * @param options Settings:
+   * ```
+   * {
+   *      namespace: integer // Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
+   *      expiresAt: Date // The time at which the rule won't be valid anymore
+   *      getIx: boolean // Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions: { // The RPC confirm options:
    *            skipPreflight?: boolean; // Disables transaction verification step
    *            commitment?: Commitment; //  Desired commitment level
    *            preflightCommitment?: Commitment; // Preflight commitment level
@@ -1370,18 +1539,23 @@ export class SolCerberus {
    *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
    *          }
    *    }
+   * ```
    */
   async addRule(
     role: string,
     resource: string,
     permission: string,
-    namespace: namespaces = namespaces.Rule,
     options: AddRuleOptionsType = {},
   ): Promise<string | TransactionInstruction> {
-    options = {...{expiresAt: null, getIx: false}, ...options}; // Default options
+    options = {
+      namespace: namespaces.Rule,
+      expiresAt: null,
+      getIx: false,
+      ...options,
+    }; // Default options
     // Fetch accounts and RULE for NS and Role (verifies if current user is allowed to delete a rule using this Namespace and Role)
     let {solCerberusRule, ...accounts} = await this.accounts(
-      namespace.toString(),
+      (options.namespace as namespaces).toString(),
       role,
       {
         namespace: namespaces.DeleteRuleNSRole,
@@ -1400,14 +1574,14 @@ export class SolCerberus {
     );
     const method = this.program.methods
       .addRule({
-        namespace: namespace,
+        namespace: options.namespace as namespaces,
         role: role,
         resource: resource,
         permission: permission,
         expiresAt: options.expiresAt ? dateToRust(options.expiresAt) : null,
       })
       .accounts({
-        rule: await sc_rule_pda(this.appId, role, resource, permission),
+        rule: await rulePda(this.appId, role, resource, permission),
         solCerberusRule: solCerberusRule,
         solCerberusRule2: solCerberusRule2,
         ...accounts,
@@ -1421,34 +1595,35 @@ export class SolCerberus {
   /**
    * Delete Rule/Permission
    *
-   * @param role The role getting the permission
-   * @param resource The resource in which the permission will have effect
-   * @param permission The permission
-   * @param namespace Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
-   * @param options Settings: {
-   *      expiresAt: (number) The time at which the role won't be valid anymore
-   *      getIx: (boolean) Returns the instruction instead of executing the command on Solana's RPC
-   *      confirmOptions: The RPC confirm options:
-   *          {
+   * @param role The role name
+   * @param resource The resource name
+   * @param permission The permission name
+   * @param options Settings:
+   * ```
+   * {
+   *      namespace?: integer // Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
+   *      collector?: PublicKey // The wallet receiving the funds (defaults to authority)
+   *      getIx?: boolean Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions?: { // The RPC confirm options:
    *            skipPreflight?: boolean; // Disables transaction verification step
    *            commitment?: Commitment; //  Desired commitment level
    *            preflightCommitment?: Commitment; // Preflight commitment level
    *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
    *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
-   *          }
-   *    }
+   *      }
+   * }
+   * ```
    */
   async deleteRule(
     role: string,
     resource: string,
     permission: string,
-    namespace: namespaces = namespaces.Rule,
     options: DeleteRuleOptionsType = {},
   ): Promise<string | TransactionInstruction> {
-    options = {...{expiresAt: null, getIx: false}, ...options}; // Default options
+    options = {namespace: namespaces.Rule, getIx: false, ...options}; // Default options
     // Fetch accounts and RULE for NS and Role (verifies if current user is allowed to create a rule using this Namespace and Role)
     let {solCerberusRule, ...accounts} = await this.accounts(
-      namespace.toString(),
+      (options.namespace as namespaces).toString(),
       role,
       {
         namespace: namespaces.AddRuleNSRole,
@@ -1466,7 +1641,7 @@ export class SolCerberus {
       },
     );
     const method = this.program.methods.deleteRule().accounts({
-      rule: await sc_rule_pda(this.appId, role, resource, permission),
+      rule: await rulePda(this.appId, role, resource, permission),
       solCerberusRule: solCerberusRule,
       solCerberusRule2: solCerberusRule2,
       collector: options.collector ?? this.wallet,

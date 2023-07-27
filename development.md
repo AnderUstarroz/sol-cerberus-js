@@ -21,6 +21,10 @@ To simplify development you can use the local version of the **sol-cerberus-js**
 
 To remove the link just run: `yarn unlink "sol-cerberus-js"`
 
+# Create project Documentation
+The docs are automatically generated and deployed on [https://js-sdk.solcerberus.com/](https://js-sdk.solcerberus.com/) via Github actions every time the branch `main` is pushed. To build the documentation on development run: `yarn docs`.
+
+
 # Publish Package
 
 To publish the package:
