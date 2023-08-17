@@ -233,7 +233,7 @@ export class SolCerberus {
   /** @internal */ #appListener: number | null = null;
   /** @internal */ #rulesListener: number | null = null;
   /** @internal */ #rolesListener: number | null = null;
-  /** @internal */ #permsAutoUpdate: boolean = true; // Fetches and updates permissions (when modified)
+  /** @internal */ #permsAutoUpdate: boolean = true; // Fetches and updates permissions when modified (only cached APPs)
   /** @internal */ #assignedRoles: AddressByRoleType = {};
   /** @internal */ #collectionsMints: CollectionsMintsType = {};
 
@@ -287,7 +287,7 @@ export class SolCerberus {
   listenAppEvents(config: SolCerberusOptionsType) {
     return this.#program.addEventListener('AppChanged', async (event, slot) => {
       if (event.appId.toBase58() === this.appId.toBase58()) {
-        console.log('Refreshing APP DATA..');
+        // console.log('Refreshing APP DATA..');
         await this.fetchAppData(); // Refresh APP data
         if (this.#permsAutoUpdate && this.rulesHaveChanged()) {
           await this.fetchPerms();
@@ -335,14 +335,9 @@ export class SolCerberus {
 
   async fetchAppData() {
     try {
-      console.log(
-        'Previous APP DATA: ',
-        this.appData?.rulesUpdatedAt.toNumber(),
-      );
       this.#appData = await this.program.account.app.fetch(
         await this.getAppPda(),
       );
-      console.log('New APP DATA: ', this.appData?.rulesUpdatedAt.toNumber());
     } catch (e) {
       console.error('Failed to fetch APP data', e);
     }
@@ -558,6 +553,7 @@ export class SolCerberus {
         groupBy: rolesGroupedBy.None,
       })) as RoleType[][],
     );
+    this.#wallet = wallet;
     return this.assignedRoles;
   }
 
@@ -678,7 +674,6 @@ export class SolCerberus {
     options = {useCache: true, groupBy: rolesGroupedBy.Address, ...options};
     const appData = await this.getAppData();
     const cachedAddresses = this.cachedAddresses(accountsFilters);
-    console.log('cached addresses', cachedAddresses);
     let cached = appData?.cached
       ? await this.cachedRoles(
           cachedAddresses,
@@ -686,7 +681,7 @@ export class SolCerberus {
           options.groupBy,
         )
       : null;
-    console.log('CACHED ROLES:', cached);
+    // console.log('CACHED ROLES:', cached);
     if (!options.useCache || !cached) {
       let fetched = this.parseRoles(
         await this.#program.account.role.all([
@@ -699,7 +694,7 @@ export class SolCerberus {
           ...accountsFilters,
         ]),
       );
-      console.log('FETCHED FROM SOLANA:\n', fetched);
+      // console.log('FETCHED FROM SOLANA:\n', fetched);
       cached = this.groupRoles(fetched, options.groupBy);
       if (this.useCache()) {
         // Include not found addresses to avoid repeating Solana requests in the future.
@@ -880,7 +875,6 @@ export class SolCerberus {
       ...(await this.getDefaultAccounts(options.useCPI !== false)),
       ...(options.defaultAccounts ?? {}),
     };
-    console.log('Fetched accounts:', defaultOutput);
     if (this.isAuthority()) return defaultOutput;
     try {
       const rule = this.findRule(
@@ -889,7 +883,9 @@ export class SolCerberus {
         permission,
         options.namespace,
       );
-      if (!rule) return defaultOutput;
+      if (!rule) {
+        return {...defaultOutput, solCerberusSeed: await seedPda(this.wallet)};
+      }
       const [roleFound, resourceFound, PermissionFound, ns] = rule;
       const validAddress = this.validAssignedAddress(
         this.assignedRoles[roleFound],
@@ -925,34 +921,41 @@ export class SolCerberus {
   ): Promise<AccountsType> {
     let asyncFuncs = [];
     // Rule PDA fetcher
-    if (!defaultOutput.hasOwnProperty('solCerberusRule')) {
+    if (!defaultOutput.solCerberusRule) {
       asyncFuncs.push(async () => [
         'solCerberusRule',
-        rulePda(this.appId, role, resource, permission, namespace),
+        await rulePda(this.appId, role, resource, permission, namespace),
       ]);
     }
     // Role PDA fetcher
-    if (!defaultOutput.hasOwnProperty('solCerberusRole')) {
+    if (!defaultOutput.solCerberusRole) {
       asyncFuncs.push(async () => [
         'solCerberusRole',
-        rolePda(this.appId, role, new PublicKey(assignedAddress)),
+        await rolePda(this.appId, role, new PublicKey(assignedAddress)),
       ]);
     }
     // tokenAccount PDA fetcher
-    if (!defaultOutput.hasOwnProperty('solCerberusToken')) {
-      asyncFuncs.push(async () =>
-        this.getTokenAccount(roles[role][assignedAddress], assignedAddress),
+    if (!defaultOutput.solCerberusToken) {
+      asyncFuncs.push(
+        async () =>
+          await this.getTokenAccount(
+            roles[role][assignedAddress],
+            assignedAddress,
+          ),
       );
     }
     // Metadata PDA fetcher (optional)
-    if (!defaultOutput.hasOwnProperty('solCerberusMetadata')) {
-      asyncFuncs.push(async () =>
-        this.getMetadataAccount(roles[role][assignedAddress]),
+    if (!defaultOutput.solCerberusMetadata) {
+      asyncFuncs.push(
+        async () => await this.getMetadataAccount(roles[role][assignedAddress]),
       );
     }
     // Seed PDA fetcher
-    if (!defaultOutput.hasOwnProperty('solCerberusSeed')) {
-      asyncFuncs.push(async () => ['solCerberusSeed', seedPda(this.wallet)]);
+    if (!defaultOutput.solCerberusSeed) {
+      asyncFuncs.push(async () => [
+        'solCerberusSeed',
+        await seedPda(this.wallet),
+      ]);
     }
     (await Promise.allSettled(asyncFuncs.map(f => f()))).map(
       (pdaRequest: any) => {
@@ -962,6 +965,7 @@ export class SolCerberus {
         }
       },
     );
+    // console.log('Fetched accounts:', defaultOutput);
     return defaultOutput;
   }
 
@@ -971,9 +975,10 @@ export class SolCerberus {
   async getTokenAccount(
     assignedRole: AssignedRoleObjectType,
     assignedAddress: string,
-  ) {
+  ): Promise<[string, PublicKey | null]> {
+    let tokenAcc: [string, PublicKey | null] = ['solCerberusToken', null];
     if (assignedRole.addressType === 'nft') {
-      return getAssociatedTokenAddress(
+      tokenAcc[1] = await getAssociatedTokenAddress(
         new PublicKey(assignedAddress),
         this.wallet,
       );
@@ -983,12 +988,12 @@ export class SolCerberus {
           `Missing NFT Mint addresses for collection: "${assignedAddress}"`,
         );
       }
-      return [
-        'solCerberusToken',
-        getAssociatedTokenAddress(assignedRole.nftMints[0], this.wallet),
-      ];
+      tokenAcc[1] = await getAssociatedTokenAddress(
+        assignedRole.nftMints[0],
+        this.wallet,
+      );
     }
-    return ['solCerberusToken', null];
+    return tokenAcc;
   }
 
   /**
@@ -1016,14 +1021,19 @@ export class SolCerberus {
   /**
    * Adds NFT fetcher (only needed when using NFT authentication)
    */
-  async getMetadataAccount(assignedRole: AssignedRoleObjectType) {
-    if (assignedRole.addressType === 'collection') {
-      return [
-        'solCerberusMetadata', // @ts-ignore
-        nftMetadataPda(assignedRole.nftMints[0] as PublicKey),
-      ];
+  async getMetadataAccount(
+    assignedRole: AssignedRoleObjectType,
+  ): Promise<[string, PublicKey | null]> {
+    let metadataAcc: [string, PublicKey | null] = ['solCerberusMetadata', null];
+    if (
+      assignedRole.addressType === 'collection' &&
+      assignedRole.nftMints?.length
+    ) {
+      metadataAcc[1] = await nftMetadataPda(
+        assignedRole.nftMints[0] as PublicKey,
+      );
     }
-    return ['solCerberusMetadata', null];
+    return metadataAcc;
   }
 
   /*
@@ -1043,7 +1053,7 @@ export class SolCerberus {
     let cached = appData?.cached
       ? await this.cachedPerms(appData.rulesUpdatedAt.toNumber())
       : null;
-    console.log('CACHED RULES:', cached);
+    // console.log('CACHED RULES:', cached);
     // Fetch perms only if they have been modified
     if (!options.useCache || !cached) {
       let fetched = await this.#program.account.rule.all([
@@ -1137,7 +1147,7 @@ export class SolCerberus {
       anchor.IdlAccounts<SolCerberusTypes>['rule']
     >[],
   ) {
-    console.log('Storing perms:', fetchedPerms);
+    // console.log('Storing perms:', fetchedPerms);
     bulkInsert(
       this.ruleDB as IDBPDatabase<unknown>,
       RULE_STORE,
@@ -1187,7 +1197,7 @@ export class SolCerberus {
    * Stores Roles on IDB (When available)
    */
   async setCachedRoles(parsedRoles: RoleType[], fullyFetched: boolean = false) {
-    console.log('Storing roles:', parsedRoles);
+    // console.log('Storing roles:', parsedRoles);
     if (fullyFetched) {
       await setDBConfig(this.roleDB as IDBPDatabase<unknown>, {
         fullyFetched: true,
