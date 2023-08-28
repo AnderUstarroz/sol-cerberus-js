@@ -3,6 +3,7 @@ import {
   Keypair,
   PublicKey,
   Connection,
+  Transaction,
   ConfirmOptions,
   TransactionInstruction,
 } from '@solana/web3.js';
@@ -65,6 +66,11 @@ export enum addressTypes {
   Collection = 'collection',
 }
 
+export interface runMethodOptionsType {
+  getIx?: boolean;
+  confirmOptions?: ConfirmOptions;
+}
+
 export interface InitializeAppOptionsType {
   cached?: boolean;
   getIx?: boolean;
@@ -100,6 +106,19 @@ export interface DeleteRuleOptionsType
   extends Omit<AssignRoleOptionsType, 'expiresAt'> {
   namespace?: namespaces;
   collector?: PublicKey;
+}
+
+export interface AllowAssignRoleOptionsType extends AssignRoleOptionsType {}
+
+export interface AllowDeleteAssignedRoleOptionsType
+  extends AssignRoleOptionsType {}
+
+export interface AllowAddRuleOptionsType extends AssignRoleOptionsType {
+  allowedNamespace?: namespaces | '*';
+}
+
+export interface AllowDeleteRuleOptionsType extends AssignRoleOptionsType {
+  allowedNamespace?: namespaces | '*';
 }
 
 export interface FetchPermsOptionsType {
@@ -221,6 +240,7 @@ export function getProvider(
 
 export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
+  /** @internal */ #provider: anchor.Provider;
   /** @internal */ #appId: PublicKey;
   /** @internal */ #appPda: PublicKey | null = null;
   /** @internal */ #appData:
@@ -240,7 +260,8 @@ export class SolCerberus {
   /**
    * Creates Sol Cerberus client
    *
-   * @param provider Connection provider
+   * @param connection Connection provider
+   * @param wallet Wallet provider
    * @param options Sol Cerberus config options:
    * ```
    * {
@@ -264,14 +285,14 @@ export class SolCerberus {
     wallet: any,
     options: SolCerberusOptionsType = {},
   ) {
-    const provider = getProvider(connection, wallet);
+    this.#provider = getProvider(connection, wallet);
     this.#appId = options.appId ?? Keypair.generate().publicKey;
     this.#program = new anchor.Program(
       SolCerberusIDL as any,
       SOL_CERBERUS_PROGRAM_ID,
-      provider,
+      this.#provider,
     );
-    this.#wallet = provider.publicKey as PublicKey;
+    this.#wallet = this.#provider.publicKey as PublicKey;
     this.#appListener = this.listenAppEvents(options);
     this.#rulesListener = this.listenRulesEvents(options);
     this.#rolesListener = this.listenRolesEvents(options);
@@ -287,7 +308,6 @@ export class SolCerberus {
   listenAppEvents(config: SolCerberusOptionsType) {
     return this.#program.addEventListener('AppChanged', async (event, slot) => {
       if (event.appId.toBase58() === this.appId.toBase58()) {
-        // console.log('Refreshing APP DATA..');
         await this.fetchAppData(); // Refresh APP data
         if (this.#permsAutoUpdate && this.rulesHaveChanged()) {
           await this.fetchPerms();
@@ -663,8 +683,14 @@ export class SolCerberus {
    * Fetches all assigned roles for the current program
    *
    * @param accountsFilters Program accounts filters: https://solanacookbook.com/guides/get-program-accounts.html#deep-dive
-   * @param useCache Defines if cached should be used or not
-   * @param groupByAddress When True returns roles grouped by address, otherwise returns addresses grouped by Roles.
+   * @param options special settings for fetching accounts:
+   * ```
+   * {
+   *    useCache?: Boolean // Defines if cache should be used or not.
+   *    groupBy?:  rolesGroupedBy // Either rolesGroupedBy.Role, rolesGroupedBy.Address or rolesGroupedBy.None
+   * }
+   * ```
+   *
    * @returns Roles (format depends on the options.groupBy used)
    */
   async fetchAssignedRoles(
@@ -713,7 +739,14 @@ export class SolCerberus {
   /**
    * Fetches all roles
    *
-   * @param options
+   * @param options special settings for fetching accounts:
+   * ```
+   * {
+   *    useCache?: Boolean // Defines if cache should be used or not.
+   *    groupBy?:  rolesGroupedBy // Either rolesGroupedBy.Role, rolesGroupedBy.Address or rolesGroupedBy.None
+   * }
+   * ```
+   *
    * @returns Roles (format depends on the options.groupBy used)
    */
   fetchAllRoles = async (
@@ -1003,6 +1036,7 @@ export class SolCerberus {
   async createRuleDB(version: number): Promise<boolean> {
     const exists =
       !this.ruleDB && (await dbExists(this.appId.toBase58(), 'Rule', version));
+    if (this.ruleDB) this.ruleDB.close(); // Close DB if exists (may block otherwise)
     this.#ruleDB = await getRuleDB(this.appId.toBase58(), version);
     return exists;
   }
@@ -1014,6 +1048,7 @@ export class SolCerberus {
   async createRoleDB(version: number): Promise<boolean> {
     const exists =
       !this.roleDB && (await dbExists(this.appId.toBase58(), 'Role', version));
+    if (this.roleDB) this.roleDB.close(); // Close DB if exists (may block otherwise)
     this.#roleDB = await getRoleDB(this.appId.toBase58(), version);
     return exists;
   }
@@ -1305,6 +1340,64 @@ export class SolCerberus {
   }
 
   /**
+   * Executes Add/Delete Role/Rule instructions, updating the corresponding SC APP cache date:
+   *
+   *  - "rules_updated_at"
+   *  - "roles_updated_at"
+   *
+   * So the users can know when was the last time the Rules/Roles were updated.
+   *
+   * @param method RPC method to execute (e.g: addRule, assignRole, etc..)
+   * @param cacheType Either cacheUpdated.Role or cacheUpdated.Rule
+   * @param options Settings:
+   * ```
+   * {
+   *      getIx?: boolean Returns the instruction instead of executing the command on Solana's RPC
+   *      confirmOptions?: { // The RPC confirm options:
+   *            skipPreflight?: boolean; // Disables transaction verification step
+   *            commitment?: Commitment; //  Desired commitment level
+   *            preflightCommitment?: Commitment; // Preflight commitment level
+   *            maxRetries?: number; //  Maximum number of times for the RPC node to retry
+   *            minContextSlot?: number; //The minimum slot that the request can be evaluated at
+   *      }
+   * }
+   * ```
+   * @returns string
+   */
+  async runMethod(
+    method: any,
+    cacheType: cacheUpdated,
+    options: runMethodOptionsType,
+  ) {
+    // Return Instruction
+    if (options.getIx) {
+      return await method.instruction();
+    }
+
+    await this.getAppData(); // Fetch latest APP data
+    // Return RPC response
+    if (!this.useCache()) {
+      return await method.rpc(options.confirmOptions);
+    }
+    const tx = new Transaction(
+      await this.#provider.connection.getLatestBlockhash(),
+    );
+    tx.add(await method.instruction());
+    tx.add(
+      await this.program.methods
+        .updateCache(cacheType)
+        .accounts({app: await this.getAppPda()})
+        .instruction(),
+    );
+    // @ts-ignore
+    return await this.#provider.sendAndConfirm(
+      tx,
+      undefined,
+      options.confirmOptions,
+    );
+  }
+
+  /**
    * Initializes a Sol Cerberus APP
    *
    * @param name Name to identify the APP
@@ -1312,8 +1405,8 @@ export class SolCerberus {
    * @param options Settings:
    * ```
    * {
-   *    cached: boolean // Wether the Roles and Permissions should be cached on client side
-   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    cached: boolean // Wether the Roles and Permissions should be cached on client side (default true)
+   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC (default false)
    *    confirmOptions: { //The RPC confirm options:
    *          skipPreflight?: boolean; // Disables transaction verification step
    *          commitment?: Commitment; //  Desired commitment level
@@ -1355,8 +1448,8 @@ export class SolCerberus {
    * ```
    * {
    *    authority: PublicKey // Updates the authority of the Sol Cerberus APP
-   *    cached: boolean // Wether the Roles and Permissions should be cached on client side
-   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    cached: boolean // Wether the Roles and Permissions should be cached on client side (default true)
+   *    getIx: boolean // Returns the instruction instead of executing the command on Solana's RPC (default false)
    *    confirmOptions: { //The RPC confirm options:
    *          skipPreflight?: boolean; // Disables transaction verification step
    *          commitment?: Commitment; //  Desired commitment level
@@ -1429,14 +1522,14 @@ export class SolCerberus {
   /**
    * Assign a Role to the provided address or to all addresses ("*")
    *
-   * @param role String representing the role to assign
+   * @param role String representing the role to assign, only alphanumeric characters (a-z, A-Z,0-9) and 16 characters max.
    * @param addressType Either 'wallet', 'nft' or 'collection'
    * @param address The Solana address (or wildcard "*") to which the role is assigned. The wilcard "*" means that role will be applied to everyone.
    * @param options Settings:
    * ```
    * {
    *    expiresAt: Date //The time at which the role won't be valid anymore
-   *    getIx: boolean //Returns the instruction instead of executing the command on Solana's RPC
+   *    getIx: boolean // Returns the instruction instead of executing the command on Solana's RPC (default false)
    *    confirmOptions: { //The RPC confirm options:
    *          skipPreflight?: boolean; // Disables transaction verification step
    *          commitment?: Commitment; //  Desired commitment level
@@ -1476,9 +1569,10 @@ export class SolCerberus {
         })),
       });
 
-    return await (options.getIx
-      ? method.instruction()
-      : method.rpc(options.confirmOptions ?? undefined));
+    return await this.runMethod(method, cacheUpdated.Roles, {
+      getIx: options.getIx,
+      confirmOptions: options.confirmOptions,
+    });
   }
 
   /**
@@ -1524,15 +1618,16 @@ export class SolCerberus {
       })),
     });
 
-    return await (options.getIx
-      ? method.instruction()
-      : method.rpc(options.confirmOptions ?? undefined));
+    return await this.runMethod(method, cacheUpdated.Roles, {
+      getIx: options.getIx,
+      confirmOptions: options.confirmOptions,
+    });
   }
 
   /**
    * Create new Rule/Permission
    *
-   * @param role The role getting the permission
+   * @param role The role getting the permission, only alphanumeric characters (a-z, A-Z,0-9) and 16 characters max.
    * @param resource The resource in which the permission will have effect
    * @param permission The permission
    * @param options Settings:
@@ -1540,7 +1635,7 @@ export class SolCerberus {
    * {
    *      namespace: integer // Defines the type of rules: 0: Default rule, 1: AssignRole rule, etc..
    *      expiresAt: Date // The time at which the rule won't be valid anymore
-   *      getIx: boolean // Returns the instruction instead of executing the command on Solana's RPC
+   *      getIx: boolean // Returns the instruction instead of executing the command on Solana's RPC (default false)
    *      confirmOptions: { // The RPC confirm options:
    *            skipPreflight?: boolean; // Disables transaction verification step
    *            commitment?: Commitment; //  Desired commitment level
@@ -1597,9 +1692,10 @@ export class SolCerberus {
         ...accounts,
       });
 
-    return await (options.getIx
-      ? method.instruction()
-      : method.rpc(options.confirmOptions ?? undefined));
+    return await this.runMethod(method, cacheUpdated.Rules, {
+      getIx: options.getIx,
+      confirmOptions: options.confirmOptions,
+    });
   }
 
   /**
@@ -1658,8 +1754,48 @@ export class SolCerberus {
       ...accounts,
     });
 
-    return await (options.getIx
-      ? method.instruction()
-      : method.rpc(options.confirmOptions ?? undefined));
+    return await this.runMethod(method, cacheUpdated.Rules, {
+      getIx: options.getIx,
+      confirmOptions: options.confirmOptions,
+    });
+  }
+
+  async allowAssignRole(
+    _role: string,
+    _allowedAddressType: addressTypes | '*',
+    _allowedRole: string | '*',
+    _options: AllowAssignRoleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    // Not implemented
+    return '';
+  }
+  async allowDeleteAssignedRole(
+    _role: string,
+    _allowedAddressType: addressTypes | '*',
+    _allowedDeleteRole: string | '*',
+    _options: AllowDeleteAssignedRoleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    // Not implemented
+    return '';
+  }
+  async allowAddRule(
+    _role: string,
+    _allowedRole: addressTypes | '*',
+    _allowedResource: string | '*',
+    _allowedPermission: string | '*',
+    _options: AllowAddRuleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    // Not implemented
+    return '';
+  }
+  async allowDeleteRule(
+    _role: string,
+    _allowedRole: addressTypes | '*',
+    _allowedResource: string | '*',
+    _allowedPermission: string | '*',
+    _options: AllowDeleteRuleOptionsType = {},
+  ): Promise<string | TransactionInstruction> {
+    // Not implemented
+    return '';
   }
 }

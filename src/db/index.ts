@@ -25,7 +25,7 @@ export interface NewConfigType {
 export type DBType = 'Rule' | 'Role';
 
 export const getDbName = (appId: string, type: DBType): string =>
-  `SolCerberus${type}DB_${appId.slice(0, 7)}`;
+  `SolCerberus${type}DB_${appId.slice(0, 4)}-${appId.slice(-4)}`;
 
 export type StoresType = typeof RULE_STORE | typeof ROLE_STORE;
 
@@ -138,7 +138,6 @@ export const getFromIndex = async (
     .objectStore(store)
     .index('compoundIndex')
     .getAll(getIDBRange(store, column, value));
-  console.log('FETCHED FROM INDEX', results);
   return results;
 };
 
