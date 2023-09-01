@@ -24,8 +24,11 @@ export interface NewConfigType {
 
 export type DBType = 'Rule' | 'Role';
 
-export const getDbName = (appId: string, type: DBType): string =>
-  `SolCerberus${type}DB_${appId.slice(0, 4)}-${appId.slice(-4)}`;
+export const getDbName = (
+  cluster: string,
+  appId: string,
+  type: DBType,
+): string => `SC${type}DB_${cluster}_${appId.slice(0, 4)}-${appId.slice(-4)}`;
 
 export type StoresType = typeof RULE_STORE | typeof ROLE_STORE;
 
@@ -38,8 +41,12 @@ export const deleteObjectStores = (db: IDBPDatabase, stores: string[]) => {
   });
 };
 
-export const getRoleDB = async (appId: string, version: number) =>
-  await openDB(getDbName(appId, 'Role'), version, {
+export const getRoleDB = async (
+  cluster: string,
+  appId: string,
+  version: number,
+) =>
+  await openDB(getDbName(cluster, appId, 'Role'), version, {
     upgrade(db, _oldVersion, _newVersion, _transaction) {
       // Erase all previous data when using a new DB version
       deleteObjectStores(db, [CONFIG_STORE, ROLE_STORE]);
@@ -60,8 +67,12 @@ export const getRoleDB = async (appId: string, version: number) =>
     },
   });
 
-export const getRuleDB = async (appId: string, version: number) =>
-  await openDB(getDbName(appId, 'Rule'), version, {
+export const getRuleDB = async (
+  cluster: string,
+  appId: string,
+  version: number,
+) =>
+  await openDB(getDbName(cluster, appId, 'Rule'), version, {
     upgrade(db, _oldVersion, _newVersion, _transaction) {
       // Erase all previous data when using a new DB version
       deleteObjectStores(db, [RULE_STORE]);
@@ -94,8 +105,13 @@ export const getRuleDB = async (appId: string, version: number) =>
  * @param version A number representing the Database version
  * @returns A Promise resolving to a boolean indicating whether the database exists (true if it exists, false otherwise).
  */
-export async function dbExists(appId: string, dbType: DBType, version: number) {
-  const dbName = getDbName(appId, dbType);
+export async function dbExists(
+  cluster: string,
+  appId: string,
+  dbType: DBType,
+  version: number,
+) {
+  const dbName = getDbName(cluster, appId, dbType);
   return !!(await window.indexedDB.databases()).filter(
     db => db.name === dbName && db.version === version,
   ).length;
@@ -154,11 +170,12 @@ export const setDBConfig = async (db: IDBPDatabase, newConfig: NewConfigType) =>
     .put(newConfig, 'Settings');
 
 export const putRole = async (
+  cluster: string,
   appId: string,
   version: number,
   role: RoleType,
 ) => {
-  const db = await getRoleDB(appId, version);
+  const db = await getRoleDB(cluster, appId, version);
   await db.put(ROLE_STORE, role);
 };
 

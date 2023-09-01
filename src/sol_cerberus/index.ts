@@ -28,12 +28,14 @@ import {
   getDBConfig,
 } from '../db';
 import {IDBPDatabase} from 'idb';
-import {dateToRust, short_key} from '../utils';
+import {clusterFromRPC, dateToRust, shortKey} from '../utils';
 
 // @TODO Remove this hack, only used to get the BN type included on package (used by app.updated_at).
 export const BIG_NUMBER: BN = 0;
 
 export type {SolCerberus as SolCerberusTypes} from '../types/sol_cerberus';
+
+export type ClusterType = 'devnet' | 'testnet' | 'mainnet-beta';
 
 export enum namespaces {
   Rule = 0,
@@ -241,6 +243,7 @@ export function getProvider(
 export class SolCerberus {
   /** @internal */ #program: anchor.Program<SolCerberusTypes>;
   /** @internal */ #provider: anchor.Provider;
+  /** @internal */ #cluster: ClusterType;
   /** @internal */ #appId: PublicKey;
   /** @internal */ #appPda: PublicKey | null = null;
   /** @internal */ #appData:
@@ -254,7 +257,7 @@ export class SolCerberus {
   /** @internal */ #rulesListener: number | null = null;
   /** @internal */ #rolesListener: number | null = null;
   /** @internal */ #permsAutoUpdate: boolean = true; // Fetches and updates permissions when modified (only cached APPs)
-  /** @internal */ #assignedRoles: AddressByRoleType = {};
+  /** @internal */ #assignedRoles: AddressByRoleType = {}; // Roles assigned to my wallet, NFTs
   /** @internal */ #collectionsMints: CollectionsMintsType = {};
 
   /**
@@ -270,6 +273,7 @@ export class SolCerberus {
    *    rulesChangedCallback?: Function // will be called whenever a rule has changed
    *    rolesChangedCallback?: Function // will be called whenever a role has changed
    *    permsAutoUpdate?: boolean // Defines if the permissions (rules) should be automatically fetched when they change.
+   *    cluster?: ClusterType // Defines the Solana cluster, either: 'devnet', 'testnet' or 'mainnet-beta' (inferred from connection when not provided)
    *    confirmOptions: { //The RPC confirm options:
    *        skipPreflight?: boolean; // Disables transaction verification step
    *        commitment?: Commitment; //  Desired commitment level
@@ -296,6 +300,7 @@ export class SolCerberus {
     this.#appListener = this.listenAppEvents(options);
     this.#rulesListener = this.listenRulesEvents(options);
     this.#rolesListener = this.listenRolesEvents(options);
+    this.#cluster = clusterFromRPC(connection.rpcEndpoint);
     if (options.hasOwnProperty('permsAutoUpdate')) {
       this.#permsAutoUpdate = !!options.permsAutoUpdate;
     }
@@ -595,7 +600,7 @@ export class SolCerberus {
         if (row.addressType === addressTypes.Collection) {
           if (!this.#collectionsMints[row.address]) {
             throw new Error(
-              `${short_key(row.address)} is a collection address! ` +
+              `${shortKey(row.address)} is a collection address! ` +
                 'To login using a NFT collection address provide both the NFT mint and the collection address, e.g: sc.login(MY_WALLET, {nfts: [[MY_NFT_MINT, NFT_COLLECTION_MINT], ...]})',
             );
           }
@@ -751,8 +756,14 @@ export class SolCerberus {
    */
   fetchAllRoles = async (
     options: AssignedRolesOptsType = {},
-  ): Promise<RolesByAddressType | AddressByRoleType | RoleType[]> =>
-    await this.fetchAssignedRoles([], options);
+  ): Promise<RolesByAddressType | AddressByRoleType | RoleType[]> => {
+    const allRoles = await this.fetchAssignedRoles([], options);
+    // Login wallet after fetching all roles
+    if (!this.isAuthority() && !Object.keys(this.assignedRoles).length) {
+      this.login(this.wallet);
+    }
+    return allRoles;
+  };
 
   includeNotFoundAddresses = async (
     cachedAddresses: string[],
@@ -1035,9 +1046,14 @@ export class SolCerberus {
    */
   async createRuleDB(version: number): Promise<boolean> {
     const exists =
-      !this.ruleDB && (await dbExists(this.appId.toBase58(), 'Rule', version));
+      !this.ruleDB &&
+      (await dbExists(this.#cluster, this.appId.toBase58(), 'Rule', version));
     if (this.ruleDB) this.ruleDB.close(); // Close DB if exists (may block otherwise)
-    this.#ruleDB = await getRuleDB(this.appId.toBase58(), version);
+    this.#ruleDB = await getRuleDB(
+      this.#cluster,
+      this.appId.toBase58(),
+      version,
+    );
     return exists;
   }
 
@@ -1047,9 +1063,14 @@ export class SolCerberus {
    */
   async createRoleDB(version: number): Promise<boolean> {
     const exists =
-      !this.roleDB && (await dbExists(this.appId.toBase58(), 'Role', version));
+      !this.roleDB &&
+      (await dbExists(this.#cluster, this.appId.toBase58(), 'Role', version));
     if (this.roleDB) this.roleDB.close(); // Close DB if exists (may block otherwise)
-    this.#roleDB = await getRoleDB(this.appId.toBase58(), version);
+    this.#roleDB = await getRoleDB(
+      this.#cluster,
+      this.appId.toBase58(),
+      version,
+    );
     return exists;
   }
 
