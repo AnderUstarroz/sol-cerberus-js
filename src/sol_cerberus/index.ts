@@ -216,6 +216,7 @@ export interface SolCerberusOptionsType {
 export type NFTAddressType = PublicKey;
 export type CollectionAddressType = PublicKey;
 export interface LoginOptionsType {
+  wallet?: PublicKey;
   nfts?: [NFTAddressType, CollectionAddressType][];
   wildcard?: boolean;
   useCache?: boolean;
@@ -536,23 +537,26 @@ export class SolCerberus {
   /**
    * Fetches the roles assigned to the provided address
    *
-   * @param wallet The Public key used for authentication
    * @param options Defines the login options:
    * ```
    * {
+   *    wallet: PublicKey // The Public key used for authentication
    *    nfts: [[NFTAddressType, CollectionAddressType], ..] // List containing pairs of NFT mint and his corresponding Collection address.
    *    collectionAddress: PublicKey // The address of the Collection (only required when login via NFT Collection address)
-   *    wildcard: boolean // Fetches or not the roles associated to all wallets via wildcard "*"
+   *    wildcard: boolean // Fetches or not the roles associated to all wallets via wildcard "*" (Default true)
    * }
    * ```
    * @returns
    */
-  async login(
-    wallet: PublicKey,
-    options: LoginOptionsType = {},
-  ): Promise<AddressByRoleType> {
-    options = {nfts: [], wildcard: true, useCache: true, ...options};
-    let addresses: (PublicKey | null)[] = [wallet];
+  async login(options: LoginOptionsType = {}): Promise<AddressByRoleType> {
+    options = {
+      wallet: this.wallet,
+      nfts: [],
+      wildcard: true,
+      useCache: true,
+      ...options,
+    };
+    let addresses: (PublicKey | null)[] = [options.wallet as PublicKey];
     // Fetch Roles assigned to all addresses (when using wildcard "*")
     if (options.wildcard) {
       addresses.push(null);
@@ -578,7 +582,9 @@ export class SolCerberus {
         groupBy: rolesGroupedBy.None,
       })) as RoleType[][],
     );
-    this.#wallet = wallet;
+    if (options.wallet) {
+      this.#wallet = options.wallet;
+    }
     return this.assignedRoles;
   }
 
@@ -601,7 +607,7 @@ export class SolCerberus {
           if (!this.#collectionsMints[row.address]) {
             throw new Error(
               `${shortKey(row.address)} is a collection address! ` +
-                'To login using a NFT collection address provide both the NFT mint and the collection address, e.g: sc.login(MY_WALLET, {nfts: [[MY_NFT_MINT, NFT_COLLECTION_MINT], ...]})',
+                'To login using a NFT collection address provide both the NFT mint and the collection address, e.g: sc.login({nfts: [[MY_NFT_MINT, NFT_COLLECTION_MINT], ...]})',
             );
           }
           assignedRoles[row.role][row.address].nftMints =
@@ -760,7 +766,7 @@ export class SolCerberus {
     const allRoles = await this.fetchAssignedRoles([], options);
     // Login wallet after fetching all roles
     if (!this.isAuthority() && !Object.keys(this.assignedRoles).length) {
-      this.login(this.wallet);
+      this.login();
     }
     return allRoles;
   };
