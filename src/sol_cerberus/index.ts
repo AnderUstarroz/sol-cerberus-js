@@ -250,8 +250,6 @@ export class SolCerberus {
   /** @internal */ #appData:
     | anchor.IdlAccounts<SolCerberusTypes>['app']
     | null = null;
-  /** @internal */ #roleDB: IDBPDatabase | null = null;
-  /** @internal */ #ruleDB: IDBPDatabase | null = null;
   /** @internal */ #permissions: CachedPermsType | null = null;
   /** @internal */ #wallet: PublicKey;
   /** @internal */ #appListener: number | null = null;
@@ -315,7 +313,7 @@ export class SolCerberus {
     return this.#program.addEventListener('AppChanged', async (event, slot) => {
       if (event.appId.toBase58() === this.appId.toBase58()) {
         await this.fetchAppData(); // Refresh APP data
-        if (this.#permsAutoUpdate && this.rulesHaveChanged()) {
+        if (this.#permsAutoUpdate && (await this.rulesHaveChanged())) {
           await this.fetchPerms();
         }
         if (config.hasOwnProperty('appChangedCallback')) {
@@ -382,13 +380,19 @@ export class SolCerberus {
     return this.#wallet;
   }
 
-  get roleDB() {
-    return this.#roleDB;
-  }
+  roleDB = async () =>
+    await getRoleDB(
+      this.#cluster,
+      this.appId.toBase58(),
+      this.appData?.rolesUpdatedAt.toNumber(),
+    );
 
-  get ruleDB() {
-    return this.#ruleDB;
-  }
+  ruleDB = async () =>
+    await getRuleDB(
+      this.#cluster,
+      this.appId.toBase58(),
+      this.appData?.rulesUpdatedAt.toNumber(),
+    );
 
   get appPda() {
     return this.#appPda;
@@ -409,13 +413,21 @@ export class SolCerberus {
   useCache = (): boolean =>
     !!this.#appData?.cached && typeof window !== 'undefined';
 
-  rolesHaveChanged = (): boolean =>
+  rolesHaveChanged = async (): Promise<boolean> =>
     this.useCache() &&
-    this.#appData?.rolesUpdatedAt.toNumber() !== this.#roleDB?.version;
+    !!this.appData &&
+    !(await this.dbVersionExists(
+      'Role',
+      this.appData.rolesUpdatedAt.toNumber(),
+    ));
 
-  rulesHaveChanged = (): boolean =>
+  rulesHaveChanged = async (): Promise<boolean> =>
     this.useCache() &&
-    this.#appData?.rulesUpdatedAt.toNumber() !== this.#ruleDB?.version;
+    !!this.appData &&
+    !(await this.dbVersionExists(
+      'Rule',
+      this.appData.rulesUpdatedAt.toNumber(),
+    ));
 
   async getAppPda(): Promise<PublicKey> {
     return this.#appPda ? this.#appPda : await this.fetchAppPda();
@@ -712,11 +724,7 @@ export class SolCerberus {
     const appData = await this.getAppData();
     const cachedAddresses = this.cachedAddresses(accountsFilters);
     let cached = appData?.cached
-      ? await this.cachedRoles(
-          cachedAddresses,
-          appData.rolesUpdatedAt.toNumber(),
-          options.groupBy,
-        )
+      ? await this.cachedRoles(cachedAddresses, options.groupBy)
       : null;
     // console.log('CACHED ROLES:', cached);
     if (!options.useCache || !cached) {
@@ -1047,38 +1055,18 @@ export class SolCerberus {
   }
 
   /**
-   * Creates Rule DB or returns the already existing one.
-   * Returns Boolean (True when DB created, False otherwise)
+   *
+   * Whether the DB version exists or not
+   *
+   * @param dbType The db type, either Rule or Role
+   * @param version number, the version of the DB
+   * @returns boolean
    */
-  async createRuleDB(version: number): Promise<boolean> {
-    const exists =
-      !this.ruleDB &&
-      (await dbExists(this.#cluster, this.appId.toBase58(), 'Rule', version));
-    if (this.ruleDB) this.ruleDB.close(); // Close DB if exists (may block otherwise)
-    this.#ruleDB = await getRuleDB(
-      this.#cluster,
-      this.appId.toBase58(),
-      version,
-    );
-    return exists;
-  }
-
-  /**
-   * Creates Role DB or returns the already existing one.
-   * Returns Boolean (True when DB created, False otherwise)
-   */
-  async createRoleDB(version: number): Promise<boolean> {
-    const exists =
-      !this.roleDB &&
-      (await dbExists(this.#cluster, this.appId.toBase58(), 'Role', version));
-    if (this.roleDB) this.roleDB.close(); // Close DB if exists (may block otherwise)
-    this.#roleDB = await getRoleDB(
-      this.#cluster,
-      this.appId.toBase58(),
-      version,
-    );
-    return exists;
-  }
+  dbVersionExists = async (
+    dbType: 'Rule' | 'Role',
+    version: number,
+  ): Promise<boolean> =>
+    await dbExists(this.#cluster, this.appId.toBase58(), dbType, version);
 
   /**
    * Adds NFT fetcher (only needed when using NFT authentication)
@@ -1112,9 +1100,7 @@ export class SolCerberus {
   async fetchPerms(options: FetchPermsOptionsType = {}) {
     options = {useCache: true, ...options};
     const appData = await this.getAppData();
-    let cached = appData?.cached
-      ? await this.cachedPerms(appData.rulesUpdatedAt.toNumber())
-      : null;
+    let cached = appData?.cached ? await this.cachedPerms() : null;
     // console.log('CACHED RULES:', cached);
     // Fetch perms only if they have been modified
     if (!options.useCache || !cached) {
@@ -1211,7 +1197,7 @@ export class SolCerberus {
   ) {
     // console.log('Storing perms:', fetchedPerms);
     bulkInsert(
-      this.ruleDB as IDBPDatabase<unknown>,
+      (await this.ruleDB()) as IDBPDatabase<unknown>,
       RULE_STORE,
       fetchedPerms.map(item => ({
         namespace: item.account.namespace,
@@ -1228,15 +1214,14 @@ export class SolCerberus {
   /**
    * Retrieves Perms from IDB (When available)
    */
-  async cachedPerms(version: number): Promise<CachedPermsType | null> {
+  async cachedPerms(): Promise<CachedPermsType | null> {
     if (this.useCache()) {
-      if (this.rulesHaveChanged()) {
-        if (!(await this.createRuleDB(version))) {
-          return null;
-        }
+      if (await this.rulesHaveChanged()) {
+        await this.ruleDB();
+        return null;
       }
       const rules = await fetchAll(
-        this.ruleDB as IDBPDatabase<unknown>,
+        (await this.ruleDB()) as IDBPDatabase<unknown>,
         RULE_STORE,
       );
       return rules.reduce(
@@ -1259,13 +1244,14 @@ export class SolCerberus {
    * Stores Roles on IDB (When available)
    */
   async setCachedRoles(parsedRoles: RoleType[], fullyFetched: boolean = false) {
+    const db = await this.roleDB();
     // console.log('Storing roles:', parsedRoles);
     if (fullyFetched) {
-      await setDBConfig(this.roleDB as IDBPDatabase<unknown>, {
+      await setDBConfig(db as IDBPDatabase<unknown>, {
         fullyFetched: true,
       });
     }
-    bulkInsert(this.roleDB as IDBPDatabase<unknown>, ROLE_STORE, parsedRoles);
+    bulkInsert(db as IDBPDatabase<unknown>, ROLE_STORE, parsedRoles);
   }
 
   isFullyFetched = async (
@@ -1290,22 +1276,21 @@ export class SolCerberus {
    */
   async cachedRoles(
     keys: string[],
-    version: number,
     groupBy: rolesGroupedBy = rolesGroupedBy.Address,
   ): Promise<RolesByAddressType | AddressByRoleType | RoleType[] | null> {
     if (this.useCache()) {
-      if (this.rolesHaveChanged()) {
-        if (!(await this.createRoleDB(version))) {
-          return null;
-        }
+      if (await this.rolesHaveChanged()) {
+        await this.roleDB();
+        return null;
       }
+      const db = await this.roleDB();
       // Either fetch specific Addresses or all of them:
       let roles = keys.length
         ? (
             await Promise.allSettled(
               keys.map((address: string) =>
                 getFromIndex(
-                  this.roleDB as IDBPDatabase<unknown>,
+                  db as IDBPDatabase<unknown>,
                   ROLE_STORE,
                   'address',
                   address,
@@ -1320,11 +1305,11 @@ export class SolCerberus {
               }
               return result;
             }, [])
-        : await fetchAll(this.roleDB as IDBPDatabase<unknown>, ROLE_STORE);
+        : await fetchAll(db as IDBPDatabase<unknown>, ROLE_STORE);
 
       // Filtered search must return null when empty
       // Otherwise it won't fetch data from Solana.
-      if (!roles.length && !(await this.isFullyFetched(this.roleDB))) {
+      if (!roles.length && !(await this.isFullyFetched(db))) {
         return null;
       }
       // NotFound addresses must be filtered out
