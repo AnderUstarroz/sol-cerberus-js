@@ -1,6 +1,6 @@
 {
   "name": "sol-cerberus-js",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Javascript SDK to interact with Solana's Sol Cerberus program",
   "license": "MIT",
   "publishConfig": {
@@ -45,7 +45,7 @@
   "homepage": "https://github.com/AnderUstarroz/sol-cerberus-js#readme",
   "dependencies": {
     "@project-serum/anchor": "^0.26.0",
-    "@solana/spl-token": "^0.3.8",
+    "@solana/spl-token": "^0.3.9",
     "big-number": "^2.0.0",
     "idb": "^7.1.1"
   },
